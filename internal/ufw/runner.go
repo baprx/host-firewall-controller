@@ -122,6 +122,19 @@ func ExecChrooted(args []string) {
 		os.Exit(127)
 	}
 
+	// Hold ufw's own lock before exec. UFW reads the rule files before taking
+	// the lock itself, so this ordering is what prevents a concurrent reader
+	// from observing ufw's non-atomic rewrite and later overwriting a rule it
+	// did not see.
+	lock, err := acquireUFWLock(ufwLockPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hfc: acquire ufw lock: %v\n", err)
+		os.Exit(127)
+	}
+	defer func() {
+		_ = lock.Close()
+	}()
+
 	env := []string{
 		"LC_ALL=C",
 		"LANG=C",
