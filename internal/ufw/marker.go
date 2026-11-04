@@ -99,11 +99,6 @@ func ParseMarker(comment string) (Marker, bool) {
 	return Marker{Token: token, Fingerprint: fingerprint}, true
 }
 
-// IsOurs reports whether comment belongs to the CR identified by token.
-func IsOurs(comment, token string) bool {
-	return strings.HasPrefix(comment, MarkerPrefix+token+":")
-}
-
 // ComposeComment builds the final ufw comment: the marker first (it must never
 // be truncated), then the optional human readable part.
 func ComposeComment(m Marker, userComment string) string {

@@ -251,6 +251,11 @@ spec:
                           <= int(self.split(':')[1])
                     maxItems: 15
                     type: array
+                    x-kubernetes-validations:
+                    - message: ports must expand to at most 15 ufw entries, counting
+                        a range as two
+                      rule: self.filter(p, p.contains(':')).size() * 2 + self.filter(p,
+                        !p.contains(':')).size() <= 15
                 type: object
             required:
             - action
@@ -265,9 +270,6 @@ spec:
             - message: limit rules require at least one destination port
               rule: self.action != 'limit' || (has(self.to) && has(self.to.ports)
                 && size(self.to.ports) > 0)
-            - message: interface requires a direction
-              rule: size(self.interface) == 0 || self.direction == 'in' || self.direction
-                == 'out'
             - message: from.cidr must be a valid IP address or CIDR
               rule: '!has(self.from) || !has(self.from.cidr) || isIP(self.from.cidr)
                 || isCIDR(self.from.cidr)'

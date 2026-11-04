@@ -95,6 +95,7 @@ type ToSpec struct {
 	// accepts at most 15 entries, counting a range as two.
 	// +optional
 	// +kubebuilder:validation:MaxItems=15
+	// +kubebuilder:validation:XValidation:rule="self.filter(p, p.contains(':')).size() * 2 + self.filter(p, !p.contains(':')).size() <= 15",message="ports must expand to at most 15 ufw entries, counting a range as two"
 	Ports []Port `json:"ports,omitempty"`
 }
 
@@ -122,7 +123,6 @@ type ResolveSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.from) || ((has(self.from.cidr) ? 1 : 0) + (has(self.from.host) ? 1 : 0) == 1)",message="from must set exactly one of cidr or host"
 // +kubebuilder:validation:XValidation:rule="!has(self.to) || ((has(self.to.cidr) ? 1 : 0) + (has(self.to.host) ? 1 : 0) <= 1)",message="to may set at most one of cidr or host"
 // +kubebuilder:validation:XValidation:rule="self.action != 'limit' || (has(self.to) && has(self.to.ports) && size(self.to.ports) > 0)",message="limit rules require at least one destination port"
-// +kubebuilder:validation:XValidation:rule="size(self.interface) == 0 || self.direction == 'in' || self.direction == 'out'",message="interface requires a direction"
 // +kubebuilder:validation:XValidation:rule="!has(self.from) || !has(self.from.cidr) || isIP(self.from.cidr) || isCIDR(self.from.cidr)",message="from.cidr must be a valid IP address or CIDR"
 // +kubebuilder:validation:XValidation:rule="!has(self.to) || !has(self.to.cidr) || isIP(self.to.cidr) || isCIDR(self.to.cidr)",message="to.cidr must be a valid IP address or CIDR"
 // +kubebuilder:validation:XValidation:rule="!has(self.to) || !has(self.to.port) || !has(self.to.ports) || size(self.to.ports) == 0",message="to must not set both port and ports"

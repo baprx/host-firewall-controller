@@ -84,7 +84,8 @@ func (r *HostFirewallRuleReconciler) converge(
 			// another HostFirewallRule. Refuse instead. The exception is a rule
 			// the operator itself added on a ufw that does not report comments:
 			// it is necessarily unmarked, so adopt it rather than duplicating.
-			if conflict, ok := conflictingEntry(state, marker, rule); ok {
+			conflict, conflictFound := conflictingEntry(state, rule)
+			if conflictFound && conflict.Marker.Token != token {
 				if commentsUnsupported && conflict.Marker.Token == "" {
 					continue
 				}
@@ -93,6 +94,28 @@ func (r *HostFirewallRuleReconciler) converge(
 					marker, ufw.ArgsString(conflict.Args)))
 				canPrune = false
 				continue
+			}
+
+			// A rule of this CR whose match key is unchanged but whose
+			// fingerprint differs is an in-place update: ufw replaces it and
+			// stores the new action, logging and comment. The one exception is
+			// prepend, where ufw reports "Skipping inserting existing rule" and
+			// leaves the old rule untouched. Delete it first so the move
+			// actually happens; the rule is briefly absent, which ufw cannot
+			// avoid.
+			replacedForPrepend := false
+			if conflictFound && rule.Prepend && conflict.Marker.String() != marker {
+				if r.DryRun {
+					log.Info("Dry run: would move rule", "marker", marker)
+					continue
+				}
+				if err := r.deleteEntry(ctx, conflict); err != nil {
+					errs = append(errs, fmt.Errorf("delete rule %s before prepending: %w", marker, err))
+					canPrune = false
+					continue
+				}
+				result.Deleted++
+				replacedForPrepend = true
 			}
 
 			if r.DryRun {
@@ -104,6 +127,17 @@ func (r *HostFirewallRuleReconciler) converge(
 			if _, err := r.Ufw.Run(ctx, rule.Args()...); err != nil {
 				errs = append(errs, fmt.Errorf("add rule %s: %w", marker, err))
 				canPrune = false
+				if replacedForPrepend {
+					// The move deleted the old rule; keep the host protected by
+					// restoring the new semantics in the old position.
+					fallback := rule
+					fallback.Prepend = false
+					if _, restoreErr := r.Ufw.Run(ctx, fallback.Args()...); restoreErr != nil {
+						errs = append(errs, fmt.Errorf("restore rule %s: %w", marker, restoreErr))
+					} else {
+						result.Added++
+					}
+				}
 				continue
 			}
 			applyDuration.Observe(time.Since(start).Seconds())
@@ -154,13 +188,15 @@ func (r *HostFirewallRuleReconciler) converge(
 }
 
 // expectedFamilyCount is how many rules ufw creates for one concrete rule.
-// An address with no family produces one rule per enabled IP family. When the
-// host does not list any IPv6 rule we conservatively expect one, so duplicate
-// v4 rules are still reduced on hosts where IPv6 is disabled.
+// An address with no family produces one rule per enabled IP family. An
+// explicit 0.0.0.0/0 or ::/0 is not "any": ufw creates a rule for that literal's
+// family only. When the host does not list any IPv6 rule we conservatively
+// expect one, so duplicate v4 rules are still reduced on hosts where IPv6 is
+// disabled.
 func expectedFamilyCount(rule ufw.Rule, state ufw.State) int {
 	hasV4, hasV6 := false, false
 	for _, address := range []string{rule.From.Address, rule.To.Address} {
-		if address == "" || address == "0.0.0.0/0" || address == "::/0" {
+		if address == "" {
 			continue
 		}
 		if strings.Contains(address, ":") {
@@ -200,13 +236,12 @@ func hasUnmarkedMatch(state ufw.State, rule ufw.Rule) bool {
 }
 
 // conflictingEntry returns an existing rule that ufw would replace if the
-// desired rule were added. The desired marker itself is not a conflict.
-func conflictingEntry(state ufw.State, marker string, rule ufw.Rule) (ufw.Entry, bool) {
+// desired rule were added. It deliberately includes rules owned by the caller:
+// the caller distinguishes an in-place update of its own rule from an attempt to
+// take over a rule it does not own.
+func conflictingEntry(state ufw.State, rule ufw.Rule) (ufw.Entry, bool) {
 	key := rule.MatchKey()
 	for _, entry := range state.All {
-		if entry.Marker.String() == marker {
-			continue
-		}
 		if ufw.MatchKeyForArgs(entry.Args) == key {
 			return entry, true
 		}
@@ -268,7 +303,7 @@ func (r *HostFirewallRuleReconciler) pruneMarkers(ctx context.Context, targets m
 				log.Info("Dry run: would delete rule", "marker", marker)
 			} else {
 				start := time.Now()
-				if err := r.deleteEntry(ctx, fresh.Enabled, entry); err != nil {
+				if err := r.deleteEntry(ctx, entry); err != nil {
 					errs = append(errs, fmt.Errorf("delete rule %s: %w", marker, err))
 					break
 				}
@@ -288,10 +323,14 @@ func (r *HostFirewallRuleReconciler) pruneMarkers(ctx context.Context, targets m
 	return deleted, errors.Join(errs...)
 }
 
-func (r *HostFirewallRuleReconciler) deleteEntry(ctx context.Context, enabled bool, entry ufw.Entry) error {
-	if enabled && entry.Number > 0 {
+func (r *HostFirewallRuleReconciler) deleteEntry(ctx context.Context, entry ufw.Entry) error {
+	if entry.Number > 0 {
 		_, err := r.Ufw.Run(ctx, "--force", "delete", strconv.Itoa(entry.Number))
 		return err
+	}
+
+	if len(entry.Args) == 0 {
+		return fmt.Errorf("ufw entry has neither a rule number nor arguments; refusing to delete it")
 	}
 
 	// Keep the comment: ufw's delete matches the first rule with the same
