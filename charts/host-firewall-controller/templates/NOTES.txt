@@ -1,0 +1,25 @@
+host-firewall-controller is installed.
+
+Each node now runs a privileged pod that manages UFW rules owned by
+HostFirewallRule resources. The operator never runs ufw enable, disable, reset,
+reload, default or logging, and never edits rules it does not own.
+
+Check the rollout:
+
+  kubectl -n {{ .Release.Namespace }} rollout status daemonset/{{ include "hfc.fullname" . }}
+
+Create a first rule:
+
+  kubectl apply -f https://raw.githubusercontent.com/baprx/host-firewall-controller/main/config/samples/security_v1alpha1_hostfirewallrule.yaml
+
+Inspect per-node status:
+
+  kubectl get hfr -A
+  kubectl get hfr <name> -o jsonpath='{.status.nodes}' | jq
+
+Notes:
+  - Rule comments are required to prove ownership. ufw 0.36 or newer is needed.
+  - The CRD lives in crds/ and is not upgraded by "helm upgrade". Apply it with:
+      kubectl apply -f <chart>/crds/security.baprx.github.io_hostfirewallrules.yaml
+  - Metrics are exposed on the node IP and port {{ .Values.metrics.port }} because the
+    DaemonSet uses hostNetwork. Disable them or change the port if it clashes.

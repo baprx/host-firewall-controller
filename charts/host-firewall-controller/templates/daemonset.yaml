@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "hfc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hfc.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "hfc.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hfc.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "hfc.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      hostNetwork: true
+      dnsPolicy: Default
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: manager
+          image: {{ include "hfc.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --node-name=$(NODE_NAME)
+            - --host-root={{ .Values.hostRoot }}
+            - --ufw-path={{ .Values.ufwPath }}
+            - --sweep-interval={{ .Values.sweepInterval }}
+            - --default-refresh-interval={{ .Values.defaultRefreshInterval }}
+            - --min-refresh-interval={{ .Values.minRefreshInterval }}
+            - --max-rules-per-node={{ .Values.maxRulesPerNode }}
+            - --max-rules-per-cr={{ .Values.maxRulesPerCR }}
+            - --max-addresses={{ .Values.maxAddresses }}
+            - --health-probe-bind-address={{ .Values.healthProbe.bindAddress }}
+            - --metrics-bind-address={{ if .Values.metrics.enabled }}{{ .Values.metrics.bindAddress }}{{ else }}0{{ end }}
+            {{- if .Values.dryRun }}
+            - --dry-run
+            {{- end }}
+            {{- if .Values.allowMissingUFW }}
+            - --allow-missing-ufw
+            {{- end }}
+            {{- if .Values.lockPath }}
+            - --lock-path={{ .Values.lockPath }}
+            {{- end }}
+            {{- range .Values.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              hostPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.healthProbe.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: {{ .Values.healthProbe.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: host-root
+              mountPath: {{ .Values.hostRoot }}
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory

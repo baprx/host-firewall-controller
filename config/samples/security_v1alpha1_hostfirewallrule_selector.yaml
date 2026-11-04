@@ -1,0 +1,17 @@
+apiVersion: security.baprx.github.io/v1alpha1
+kind: HostFirewallRule
+metadata:
+  labels:
+    app.kubernetes.io/name: host-firewall-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: limit-ssh-ingress
+  namespace: default
+spec:
+  action: limit
+  protocol: tcp
+  comment: Rate-limit SSH on ingress nodes
+  nodeSelector:
+    matchLabels:
+      role: ingress
+  to:
+    ports: ["22"]
