@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "initial-version": "0.1.0",
+  "packages": {
+    ".": {
+      "release-type": "go",
+      "include-component-in-tag": false,
+      "exclude-paths": ["charts/host-firewall-controller"],
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "charts/host-firewall-controller/Chart.yaml",
+          "jsonpath": "$.appVersion"
+        }
+      ]
+    },
+    "charts/host-firewall-controller": {
+      "release-type": "helm",
+      "component": "host-firewall-controller",
+      "include-component-in-tag": true
+    }
+  }
+}
