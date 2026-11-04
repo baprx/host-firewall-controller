@@ -6,7 +6,7 @@ Kubernetes operator that manages UFW rules on every node from HostFirewallRule c
 
 ## Requirements
 
-Kubernetes: `>=1.29.0-0`
+Kubernetes: `>=1.31.0-0`
 
 ## Values
 
