@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- security_v1alpha1_hostfirewallrule.yaml
+- security_v1alpha1_hostfirewallrule_fqdn.yaml
+- security_v1alpha1_hostfirewallrule_selector.yaml
+- security_v1alpha1_hostfirewallrule_kubelet.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

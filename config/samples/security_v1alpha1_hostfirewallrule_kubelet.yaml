@@ -1,0 +1,16 @@
+apiVersion: security.baprx.github.io/v1alpha1
+kind: HostFirewallRule
+metadata:
+  labels:
+    app.kubernetes.io/name: host-firewall-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: allow-kubelet
+  namespace: default
+spec:
+  action: allow
+  protocol: tcp
+  comment: Kubelet from the pod network
+  from:
+    cidr: 10.244.0.0/16
+  to:
+    ports: ["10250"]

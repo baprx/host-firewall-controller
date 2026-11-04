@@ -1,0 +1,40 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "hfc.fullname" . }}
+  labels:
+    {{- include "hfc.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - security.baprx.github.io
+    resources:
+      - hostfirewallrules
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - security.baprx.github.io
+    resources:
+      - hostfirewallrules/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+{{- end }}

@@ -1,0 +1,361 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: hostfirewallrules.security.baprx.github.io
+spec:
+  group: security.baprx.github.io
+  names:
+    kind: HostFirewallRule
+    listKind: HostFirewallRuleList
+    plural: hostfirewallrules
+    shortNames:
+    - hfr
+    singular: hostfirewallrule
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.action
+      name: Action
+      type: string
+    - jsonPath: .spec.direction
+      name: Direction
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: HostFirewallRule is the Schema for the hostfirewallrules API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of HostFirewallRule
+            properties:
+              action:
+                description: action is the ufw action.
+                enum:
+                - allow
+                - deny
+                - reject
+                - limit
+                type: string
+              comment:
+                description: |-
+                  comment is an optional human readable note appended after the ownership
+                  marker in the ufw rule comment.
+                  ufw's comment parser does not accept a single quote or a line break.
+                maxLength: 200
+                pattern: ^[^'\r\n]*$
+                type: string
+              direction:
+                default: in
+                description: direction is the traffic direction.
+                enum:
+                - in
+                - out
+                type: string
+              from:
+                description: from is the source of the traffic. When omitted, ufw's
+                  "any" is used.
+                properties:
+                  cidr:
+                    description: cidr is an IP address or CIDR block, for example
+                      10.0.0.0/8 or 2001:db8::1.
+                    type: string
+                  host:
+                    description: |-
+                      host is a fully qualified domain name that the operator resolves on every
+                      node. The resolved addresses are refreshed periodically.
+                    maxLength: 253
+                    pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.?$
+                    type: string
+                  port:
+                    description: port is the port or port range on this side of the
+                      rule.
+                    maxLength: 11
+                    pattern: ^[0-9]{1,5}(:[0-9]{1,5})?$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: port must be between 0 and 65535
+                      rule: int(self.split(':')[0]) <= 65535 && (self.split(':').size()
+                        == 1 || int(self.split(':')[1]) <= 65535)
+                    - message: port range start must not exceed its end
+                      rule: self.split(':').size() == 1 || int(self.split(':')[0])
+                        <= int(self.split(':')[1])
+                type: object
+              interface:
+                description: interface limits the rule to one network interface.
+                maxLength: 15
+                type: string
+              log:
+                default: false
+                description: log enables per-rule logging.
+                type: boolean
+              nodeSelector:
+                description: |-
+                  nodeSelector selects the nodes this rule applies to. An empty selector
+                  applies the rule to every node.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              prepend:
+                default: false
+                description: |-
+                  prepend places the rule before all existing rules of the same IP family
+                  instead of appending it.
+                type: boolean
+              protocol:
+                default: any
+                description: protocol is the layer 4 protocol. "any" lets ufw handle
+                  both tcp and udp.
+                enum:
+                - tcp
+                - udp
+                - any
+                type: string
+              resolve:
+                description: resolve tunes hostname resolution.
+                properties:
+                  ipFamilies:
+                    default:
+                    - IPv4
+                    - IPv6
+                    description: ipFamilies selects which resolved families become
+                      rules.
+                    items:
+                      description: IPFamily selects which resolved addresses are turned
+                        into rules.
+                      enum:
+                      - IPv4
+                      - IPv6
+                      type: string
+                    type: array
+                  maxAddresses:
+                    default: 16
+                    description: maxAddresses caps how many addresses are used per
+                      hostname.
+                    format: int32
+                    maximum: 64
+                    minimum: 1
+                    type: integer
+                  refreshInterval:
+                    description: |-
+                      refreshInterval is how often hostnames are resolved again. Values below
+                      30s are clamped. Defaults to the operator's defaultRefreshInterval.
+                    type: string
+                type: object
+              to:
+                description: to is the destination of the traffic. When omitted, ufw's
+                  "any" is used.
+                properties:
+                  cidr:
+                    description: cidr is an IP address or CIDR block, for example
+                      10.0.0.0/8 or 2001:db8::1.
+                    type: string
+                  host:
+                    description: |-
+                      host is a fully qualified domain name that the operator resolves on every
+                      node. The resolved addresses are refreshed periodically.
+                    maxLength: 253
+                    pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.?$
+                    type: string
+                  port:
+                    description: port is the port or port range on this side of the
+                      rule.
+                    maxLength: 11
+                    pattern: ^[0-9]{1,5}(:[0-9]{1,5})?$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: port must be between 0 and 65535
+                      rule: int(self.split(':')[0]) <= 65535 && (self.split(':').size()
+                        == 1 || int(self.split(':')[1]) <= 65535)
+                    - message: port range start must not exceed its end
+                      rule: self.split(':').size() == 1 || int(self.split(':')[0])
+                        <= int(self.split(':')[1])
+                  ports:
+                    description: |-
+                      ports lists destination ports. Ranges use the "start:end" form. ufw
+                      accepts at most 15 entries, counting a range as two.
+                    items:
+                      description: Port is a single port or a "start:end" range.
+                      maxLength: 11
+                      pattern: ^[0-9]{1,5}(:[0-9]{1,5})?$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: port must be between 0 and 65535
+                        rule: int(self.split(':')[0]) <= 65535 && (self.split(':').size()
+                          == 1 || int(self.split(':')[1]) <= 65535)
+                      - message: port range start must not exceed its end
+                        rule: self.split(':').size() == 1 || int(self.split(':')[0])
+                          <= int(self.split(':')[1])
+                    maxItems: 15
+                    type: array
+                type: object
+            required:
+            - action
+            type: object
+            x-kubernetes-validations:
+            - message: from must set exactly one of cidr or host
+              rule: '!has(self.from) || ((has(self.from.cidr) ? 1 : 0) + (has(self.from.host)
+                ? 1 : 0) == 1)'
+            - message: to may set at most one of cidr or host
+              rule: '!has(self.to) || ((has(self.to.cidr) ? 1 : 0) + (has(self.to.host)
+                ? 1 : 0) <= 1)'
+            - message: limit rules require at least one destination port
+              rule: self.action != 'limit' || (has(self.to) && has(self.to.ports)
+                && size(self.to.ports) > 0)
+            - message: interface requires a direction
+              rule: size(self.interface) == 0 || self.direction == 'in' || self.direction
+                == 'out'
+            - message: from.cidr must be a valid IP address or CIDR
+              rule: '!has(self.from) || !has(self.from.cidr) || isIP(self.from.cidr)
+                || isCIDR(self.from.cidr)'
+            - message: to.cidr must be a valid IP address or CIDR
+              rule: '!has(self.to) || !has(self.to.cidr) || isIP(self.to.cidr) ||
+                isCIDR(self.to.cidr)'
+            - message: to must not set both port and ports
+              rule: '!has(self.to) || !has(self.to.port) || !has(self.to.ports) ||
+                size(self.to.ports) == 0'
+          status:
+            description: status defines the observed state of HostFirewallRule
+            properties:
+              nodes:
+                additionalProperties:
+                  description: |-
+                    NodeStatus is this node's view of a HostFirewallRule. Firewall state is per
+                    node, so status is kept per node and written with server-side apply by the
+                    pod that owns that node.
+                  properties:
+                    applied:
+                      description: applied reports whether every desired rule is present
+                        on this node.
+                      type: boolean
+                    commentsUnsupported:
+                      description: |-
+                        commentsUnsupported is set when ufw accepted a rule but does not report
+                        its comment back. The operator then stops adding rules for this CR on this
+                        node instead of duplicating them on every sweep.
+                      type: boolean
+                    degraded:
+                      description: |-
+                        degraded reports that the rule is not fully converged for a reason other
+                        than a hard error, for example an unresolvable hostname.
+                      type: boolean
+                    generation:
+                      description: generation is the spec generation this node last
+                        reconciled.
+                      format: int64
+                      type: integer
+                    lastAppliedTime:
+                      description: lastAppliedTime is when this node last attempted
+                        to converge the rule.
+                      format: date-time
+                      type: string
+                    markers:
+                      description: markers lists the ownership markers this node expects
+                        to find.
+                      items:
+                        type: string
+                      type: array
+                    message:
+                      description: message explains a degraded or failed state.
+                      type: string
+                    resolved:
+                      description: resolved records the addresses used on this node.
+                      properties:
+                        from:
+                          items:
+                            type: string
+                          type: array
+                        to:
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    ufwEnabled:
+                      description: |-
+                        ufwEnabled reports whether ufw is currently enabled. The operator never
+                        changes this.
+                      type: boolean
+                    ufwVersion:
+                      description: ufwVersion is the version reported by the host
+                        ufw binary.
+                      type: string
+                  required:
+                  - applied
+                  - commentsUnsupported
+                  - degraded
+                  - generation
+                  - ufwEnabled
+                  type: object
+                description: nodes maps a node name to that node's view of the rule.
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
