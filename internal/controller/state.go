@@ -59,6 +59,12 @@ func (r *HostFirewallRuleReconciler) converge(
 		}
 		result.State = state
 		managedRules.Set(float64(len(state.Entries)))
+		all := make([]string, 0, len(state.All))
+		for _, entry := range state.All {
+			all = append(all, ufw.ArgsString(entry.Args))
+		}
+		log.Info("DEBUG converge state", "token", token, "enabled", state.Enabled,
+			"all", all, "entries", len(state.Entries), "desired", len(desired))
 
 		desiredByMarker := make(map[string]ufw.Rule, len(desired))
 		for _, rule := range desired {
@@ -267,6 +273,7 @@ func (r *HostFirewallRuleReconciler) readState(ctx context.Context) (ufw.State, 
 	if err != nil {
 		return ufw.State{}, fmt.Errorf("read ufw added rules: %w", err)
 	}
+	logf.FromContext(ctx).Info("DEBUG show added", "output", added)
 	addedState := ufw.ParseShowAdded(added)
 	state.All = addedState.All
 	if state.Enabled {
