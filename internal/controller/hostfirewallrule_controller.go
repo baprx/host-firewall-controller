@@ -147,7 +147,7 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	r.emitEvents(&cr, status, result.Err)
+	r.emitEvents(&cr, status, prev, result.Err)
 
 	if result.Err != nil {
 		reconcileErrors.Inc()

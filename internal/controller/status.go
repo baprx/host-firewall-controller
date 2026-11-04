@@ -133,24 +133,38 @@ func fieldManagerFor(nodeName string) string {
 	return "hfc-" + hex.EncodeToString(sum[:])[:12]
 }
 
-// emitEvents records transitions worth surfacing to users.
+// emitEvents records transitions worth surfacing to users. Repeating the same
+// failure or degraded message on every reconcile (degraded hostname rules
+// requeue every 30s) would spam the object, so only changes are emitted.
 func (r *HostFirewallRuleReconciler) emitEvents(
 	cr *securityv1alpha1.HostFirewallRule,
 	status securityv1alpha1.NodeStatus,
+	prev securityv1alpha1.NodeStatus,
 	err error,
 ) {
 	if r.Recorder == nil {
 		return
 	}
 
-	switch {
-	case err != nil:
+	if err != nil {
+		if prev.Message == status.Message {
+			return
+		}
 		r.Recorder.Eventf(cr, nil, corev1.EventTypeWarning, "ApplyFailed", "ApplyRule",
 			"Node %s could not apply the rule: %v", r.NodeName, err)
-	case status.CommentsUnsupported:
+		return
+	}
+
+	if status.CommentsUnsupported {
+		if prev.CommentsUnsupported {
+			return
+		}
 		r.Recorder.Eventf(cr, nil, corev1.EventTypeWarning, "CommentsUnsupported", "SkipAdds",
 			"Node %s: ufw accepted the rule but does not report rule comments; refusing to add more rules", r.NodeName)
-	case status.Degraded:
+		return
+	}
+
+	if status.Degraded && (!prev.Degraded || prev.Message != status.Message) {
 		r.Recorder.Eventf(cr, nil, corev1.EventTypeWarning, "Degraded", "Resolve",
 			"Node %s: %s", r.NodeName, status.Message)
 	}

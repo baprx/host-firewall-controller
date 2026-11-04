@@ -8,7 +8,7 @@ metadata:
   name: system
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: controller-manager
   namespace: system
@@ -21,7 +21,6 @@ spec:
     matchLabels:
       control-plane: controller-manager
       app.kubernetes.io/name: host-firewall-controller
-  replicas: 1
   template:
     metadata:
       annotations:
@@ -30,51 +29,42 @@ spec:
         control-plane: controller-manager
         app.kubernetes.io/name: host-firewall-controller
     spec:
-      # TODO(user): Uncomment the following code to configure the nodeAffinity expression
-      # according to the platforms which are supported by your solution.
-      # It is considered best practice to support multiple architectures. You can
-      # build your manager image using the makefile target docker-buildx.
-      # affinity:
-      #   nodeAffinity:
-      #     requiredDuringSchedulingIgnoredDuringExecution:
-      #       nodeSelectorTerms:
-      #         - matchExpressions:
-      #           - key: kubernetes.io/arch
-      #             operator: In
-      #             values:
-      #               - amd64
-      #               - arm64
-      #               - ppc64le
-      #               - s390x
-      #           - key: kubernetes.io/os
-      #             operator: In
-      #             values:
-      #               - linux
+      # One pod per node: each pod manages only its own node's ufw rules.
+      hostNetwork: true
+      # Use the host resolver so hostname rules resolve like they would on the
+      # node itself.
+      dnsPolicy: Default
+      serviceAccountName: controller-manager
+      nodeSelector:
+        kubernetes.io/os: linux
+      terminationGracePeriodSeconds: 60
       securityContext:
-        # Projects are configured by default to adhere to the "restricted" Pod Security Standards.
-        # This ensures that deployments meet the highest security requirements for Kubernetes.
-        # For more details, see: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        # The manager chroots into the host root and execs the host ufw, so it
+        # must run as root. The Helm chart sets the same securityContext.
+        runAsUser: 0
+        runAsGroup: 0
       containers:
-      - command:
+      - name: manager
+        image: controller:latest
+        command:
         - /manager
         args:
-          - --leader-elect
-          - --health-probe-bind-address=:8081
-        image: controller:latest
-        name: manager
+        - --node-name=$(NODE_NAME)
+        - --host-root=/host
+        - --health-probe-bind-address=:8081
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         ports:
-        - containerPort: 8081
-          name: health
+        - name: health
+          containerPort: 8081
           protocol: TCP
         securityContext:
-          readOnlyRootFilesystem: true
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - "ALL"
+          privileged: true
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: false
         livenessProbe:
           httpGet:
             path: /healthz
@@ -87,8 +77,6 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        # TODO(user): Configure the resources accordingly based on the project requirements.
-        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
             cpu: 500m
@@ -96,7 +84,11 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: []
-      volumes: []
-      serviceAccountName: controller-manager
-      terminationGracePeriodSeconds: 10
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /
+          type: Directory

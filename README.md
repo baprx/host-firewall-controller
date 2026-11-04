@@ -20,7 +20,8 @@ The install path is the Helm chart in
   first release with rule comments, which the operator uses to prove ownership).
 - A container runtime able to run a privileged pod with the host root filesystem
   mounted at `/host`.
-- Helm 3.8+ and Kubernetes 1.29+.
+- Helm 3.8+ and Kubernetes 1.31+. The CRD uses the CEL `isIP`/`isCIDR`
+  functions, which are available from Kubernetes 1.31.
 
 ufw does not have to be enabled. When it is inactive, the operator manages the
 rules that ufw records with `ufw show added`; it never enables the firewall.
