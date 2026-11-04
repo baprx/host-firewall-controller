@@ -19,7 +19,6 @@ package ufw
 import (
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -42,18 +41,6 @@ type Entry struct {
 	V6 bool
 }
 
-// ArgsWithoutComment returns the rule arguments with the comment clause removed.
-// Deleting by specification works with or without the comment, and dropping it
-// avoids quoting differences between ufw versions.
-func (e Entry) ArgsWithoutComment() []string {
-	for i := 0; i+1 < len(e.Args); i++ {
-		if e.Args[i] == commentToken {
-			return slices.Clone(e.Args[:i])
-		}
-	}
-	return slices.Clone(e.Args)
-}
-
 // State is the set of rules ufw reports on this host.
 type State struct {
 	Enabled bool
@@ -63,15 +50,6 @@ type State struct {
 	// All contains every non-route rule from "ufw show added", including
 	// unmanaged rules. It is used to detect rules ufw would update in place.
 	All []Entry
-}
-
-// Markers returns the marker string of every entry.
-func (s State) Markers() []string {
-	out := make([]string, 0, len(s.Entries))
-	for _, e := range s.Entries {
-		out = append(out, e.Marker.String())
-	}
-	return out
 }
 
 // Find returns every entry carrying the given marker. A marker can appear more
@@ -144,8 +122,10 @@ func ParseStatusNumbered(out string) State {
 		state.Entries = append(state.Entries, Entry{
 			Number: number,
 			Marker: marker,
-			Args:   strings.Fields(match[2]),
-			V6:     strings.Contains(rulePart, "(v6)"),
+			// The status table is a human readable view, not a ufw command
+			// line, so it cannot produce deletable arguments. Deletion of an
+			// enabled rule always uses Number.
+			V6: strings.Contains(rulePart, "(v6)"),
 		})
 	}
 	return state

@@ -32,6 +32,18 @@ To                         Action      From
 [ 5] 10.0.0.0/8                ALLOW OUT   Anywhere on eth1           # HFC:infra/out:111111111111 | office range
 `
 
+func TestParseStatusNumberedHasNoCommandArgs(t *testing.T) {
+	t.Parallel()
+
+	state := ParseStatusNumbered(activeStatus)
+	for _, entry := range state.Entries {
+		if len(entry.Args) != 0 {
+			t.Fatalf("status entry %d exposes args %q; the status table is not a ufw command line",
+				entry.Number, entry.Args)
+		}
+	}
+}
+
 func TestParseStatusNumbered(t *testing.T) {
 	t.Parallel()
 
@@ -116,9 +128,6 @@ func TestParseShowAdded(t *testing.T) {
 	}
 	if first.Marker.Token != "infra/allow-ssh" {
 		t.Fatalf("unexpected marker %#v", first.Marker)
-	}
-	if got := first.ArgsWithoutComment(); !reflect.DeepEqual(got, []string{"allow", testProtoArg, "tcp", testFromArg, testCIDR}) {
-		t.Fatalf("ArgsWithoutComment() = %#v", got)
 	}
 
 	second := state.Entries[1]

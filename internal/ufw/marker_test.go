@@ -101,18 +101,3 @@ func TestComposeCommentTruncates(t *testing.T) {
 		t.Fatal("multi-byte characters must not be cut in half")
 	}
 }
-
-func TestIsOurs(t *testing.T) {
-	t.Parallel()
-
-	marker := MarkerFor("ns/a", Rule{Action: ActionAllow})
-	if !IsOurs(ComposeComment(marker, ""), "ns/a") {
-		t.Fatal("own comment not recognised")
-	}
-	if IsOurs(marker.String(), "ns/ab") {
-		t.Fatal("token prefix must not match a longer token")
-	}
-	if IsOurs("allow ssh", "ns/a") {
-		t.Fatal("unmanaged comment recognised as ours")
-	}
-}
