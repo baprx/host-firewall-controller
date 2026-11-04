@@ -156,9 +156,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 	It("refuses to coalesce with an identical unmanaged rule", func() {
 		const unmanagedPort = "9995"
 		addOutput := ufwRun("allow", "proto", "tcp", "to", "any", "port", unmanagedPort)
-		addedBeforeApply := ufwRun("show", "added")
-		fmt.Fprintf(GinkgoWriter, "unmanaged add output:\n%s\nshow added before apply:\n%s\n",
-			addOutput, addedBeforeApply)
+		fmt.Fprintf(GinkgoWriter, "unmanaged add output:\n%s\n", addOutput)
 
 		name := "e2e-unmanaged-collision"
 		applyRule(name, `
