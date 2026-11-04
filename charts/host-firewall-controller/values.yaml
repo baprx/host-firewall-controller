@@ -1,0 +1,119 @@
+# Default values for host-firewall-controller.
+#
+# The chart installs one privileged DaemonSet pod per node. Each pod manages the
+# UFW rules of its own node only.
+
+image:
+  # repository is the operator image.
+  repository: ghcr.io/baprx/host-firewall-controller
+  # tag defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# nodeSelector restricts which nodes receive the DaemonSet. Linux is required.
+nodeSelector:
+  kubernetes.io/os: linux
+
+# tolerations defaults to running on every node, including control planes.
+tolerations:
+  - operator: Exists
+
+priorityClassName: system-node-critical
+
+# hostRoot is where the host root filesystem is mounted inside the pod.
+hostRoot: /host
+
+# ufwPath is the ufw binary path inside the host root.
+ufwPath: /usr/sbin/ufw
+
+# sweepInterval is how often orphaned rules are pruned from this node.
+sweepInterval: 5m
+
+# defaultRefreshInterval is the hostname refresh interval for rules that do not
+# set spec.resolve.refreshInterval.
+defaultRefreshInterval: 5m
+
+# minRefreshInterval is the floor applied to per-rule refresh intervals.
+minRefreshInterval: 30s
+
+# maxRulesPerNode stops convergence when a node would exceed this many managed
+# rules. Existing rules are left untouched.
+maxRulesPerNode: 256
+
+# maxRulesPerCR caps how many concrete rules one HostFirewallRule may expand to.
+maxRulesPerCR: 64
+
+# maxAddresses caps how many addresses are used per hostname by default.
+maxAddresses: 16
+
+# dryRun logs the ufw commands instead of running them.
+dryRun: false
+
+# allowMissingUFW keeps the pod running when ufw is missing or older than 0.36.
+allowMissingUFW: false
+
+# extraArgs appends raw flags to the manager.
+extraArgs: []
+
+# lockPath is the host-wide ufw lock file. Defaults to <hostRoot>/run/...
+lockPath: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# updateStrategy controls the DaemonSet rollout.
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+# terminationGracePeriodSeconds leaves time for an in-flight ufw command.
+terminationGracePeriodSeconds: 60
+
+# resources for the manager container.
+resources: {}
+
+# securityContext of the manager container. chroot and ufw require privileges,
+# and ufw must write root-owned files inside the host root.
+securityContext:
+  runAsUser: 0
+  runAsGroup: 0
+  privileged: true
+  allowPrivilegeEscalation: true
+  readOnlyRootFilesystem: false
+
+healthProbe:
+  # bindAddress is passed to --health-probe-bind-address.
+  bindAddress: ":8081"
+  # port is the container port used by the probes.
+  port: 8081
+
+metrics:
+  enabled: true
+  # bindAddress is passed to --metrics-bind-address.
+  bindAddress: ":8080"
+  # port is the container and Service port.
+  port: 8080
+  service:
+    enabled: true
+    type: ClusterIP
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+commonLabels: {}

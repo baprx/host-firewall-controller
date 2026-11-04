@@ -1,0 +1,20 @@
+apiVersion: v2
+name: host-firewall-controller
+description: >-
+  Kubernetes operator that manages UFW rules on every node from HostFirewallRule
+  custom resources, without ever touching unmanaged rules or the global UFW state.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/baprx/host-firewall-controller
+sources:
+  - https://github.com/baprx/host-firewall-controller
+keywords:
+  - ufw
+  - firewall
+  - security
+  - operator
+maintainers:
+  - name: baprx
+    url: https://github.com/baprx

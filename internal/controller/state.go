@@ -1,0 +1,304 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/baprx/host-firewall-controller/internal/ufw"
+)
+
+// convergeResult reports what happened during one convergence attempt.
+type convergeResult struct {
+	State   ufw.State
+	Added   int
+	Deleted int
+	Err     error
+}
+
+// converge makes the node's ufw match the desired rule set. Missing rules are
+// added first and stale rules are deleted second, so a deny rule that changes
+// address never briefly opens the port.
+func (r *HostFirewallRuleReconciler) converge(
+	ctx context.Context,
+	token string,
+	desired []ufw.Rule,
+	commentsUnsupported bool,
+) convergeResult {
+	log := logf.FromContext(ctx)
+	result := convergeResult{}
+
+	err := r.withLock(func() error {
+		state, err := r.readState(ctx)
+		if err != nil {
+			result.State = state
+			return err
+		}
+		result.State = state
+		managedRules.Set(float64(len(state.Entries)))
+
+		desiredByMarker := make(map[string]ufw.Rule, len(desired))
+		for _, rule := range desired {
+			desiredByMarker[ufw.MarkerFor(token, rule).String()] = rule
+		}
+
+		expectedCounts := make(map[string]int, len(desiredByMarker))
+		for marker, rule := range desiredByMarker {
+			expectedCounts[marker] = expectedFamilyCount(rule, state)
+		}
+
+		var errs []error
+		canPrune := true
+		for _, marker := range slices.Sorted(maps.Keys(desiredByMarker)) {
+			if state.Count(marker) >= expectedCounts[marker] {
+				continue
+			}
+			rule := desiredByMarker[marker]
+
+			// Adding a rule whose match key already exists is not an append:
+			// ufw updates the existing rule in place (or silently skips a
+			// prepend). That would steal an unmanaged rule or one owned by
+			// another HostFirewallRule. Refuse instead. The exception is a rule
+			// the operator itself added on a ufw that does not report comments:
+			// it is necessarily unmarked, so adopt it rather than duplicating.
+			if conflict, ok := conflictingEntry(state, marker, rule); ok {
+				if commentsUnsupported && conflict.Marker.Token == "" {
+					continue
+				}
+				errs = append(errs, fmt.Errorf(
+					"rule %s would replace existing ufw rule %q; refusing to modify a rule this CR does not own",
+					marker, ufw.ArgsString(conflict.Args)))
+				canPrune = false
+				continue
+			}
+
+			if r.DryRun {
+				log.Info("Dry run: would add rule", "command", ufw.ArgsString(rule.Args()))
+				continue
+			}
+
+			start := time.Now()
+			if _, err := r.Ufw.Run(ctx, rule.Args()...); err != nil {
+				errs = append(errs, fmt.Errorf("add rule %s: %w", marker, err))
+				canPrune = false
+				continue
+			}
+			applyDuration.Observe(time.Since(start).Seconds())
+			result.Added++
+		}
+
+		// Everything carrying our token but not desired is stale. A desired
+		// marker appearing more than once is a crash leftover; keep one copy.
+		counts := map[string]int{}
+		targets := map[string]int{}
+		for _, entry := range state.Entries {
+			if entry.Marker.Token != token {
+				continue
+			}
+			marker := entry.Marker.String()
+			counts[marker]++
+			if _, ok := desiredByMarker[marker]; !ok {
+				targets[marker] = -1
+			}
+		}
+		for marker, count := range counts {
+			expected, ok := expectedCounts[marker]
+			if ok && count > expected {
+				targets[marker] = count - expected
+			}
+		}
+
+		if canPrune {
+			deleted, err := r.pruneMarkers(ctx, targets)
+			result.Deleted = deleted
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+
+		if fresh, err := r.readState(ctx); err == nil {
+			result.State = fresh
+		} else {
+			errs = append(errs, err)
+		}
+		managedRules.Set(float64(len(result.State.Entries)))
+
+		return errors.Join(errs...)
+	})
+
+	result.Err = err
+	return result
+}
+
+// expectedFamilyCount is how many rules ufw creates for one concrete rule.
+// An address with no family produces one rule per enabled IP family. When the
+// host does not list any IPv6 rule we conservatively expect one, so duplicate
+// v4 rules are still reduced on hosts where IPv6 is disabled.
+func expectedFamilyCount(rule ufw.Rule, state ufw.State) int {
+	hasV4, hasV6 := false, false
+	for _, address := range []string{rule.From.Address, rule.To.Address} {
+		if address == "" || address == "0.0.0.0/0" || address == "::/0" {
+			continue
+		}
+		if strings.Contains(address, ":") {
+			hasV6 = true
+		} else {
+			hasV4 = true
+		}
+	}
+
+	count := 0
+	if hasV4 {
+		count++
+	}
+	if hasV6 {
+		count++
+	}
+	if count == 0 {
+		if state.HasV6() {
+			return 2
+		}
+		return 1
+	}
+	return count
+}
+
+// hasUnmarkedMatch reports whether an unmarked rule has the same ufw match key
+// as the desired rule. On a ufw that does not report comments this is how the
+// operator recognizes a rule it added earlier.
+func hasUnmarkedMatch(state ufw.State, rule ufw.Rule) bool {
+	key := rule.MatchKey()
+	for _, entry := range state.All {
+		if entry.Marker.Token == "" && ufw.MatchKeyForArgs(entry.Args) == key {
+			return true
+		}
+	}
+	return false
+}
+
+// conflictingEntry returns an existing rule that ufw would replace if the
+// desired rule were added. The desired marker itself is not a conflict.
+func conflictingEntry(state ufw.State, marker string, rule ufw.Rule) (ufw.Entry, bool) {
+	key := rule.MatchKey()
+	for _, entry := range state.All {
+		if entry.Marker.String() == marker {
+			continue
+		}
+		if ufw.MatchKeyForArgs(entry.Args) == key {
+			return entry, true
+		}
+	}
+	return ufw.Entry{}, false
+}
+
+// readState reads the rule set ufw reports. When ufw is inactive,
+// "status numbered" lists nothing, so the added-rules report is used instead.
+func (r *HostFirewallRuleReconciler) readState(ctx context.Context) (ufw.State, error) {
+	out, err := r.Ufw.Run(ctx, "status", "numbered")
+	if err != nil {
+		return ufw.State{}, fmt.Errorf("read ufw status: %w", err)
+	}
+
+	state := ufw.ParseStatusNumbered(out)
+
+	// "show added" works whether the firewall is enabled or not, and unlike
+	// "status numbered" it includes unmanaged rules. It is also the only place
+	// where rules are shown in ufw's canonical command form, which is needed to
+	// detect adds that would be applied as an update to an existing rule.
+	added, err := r.Ufw.Run(ctx, "show", "added")
+	if err != nil {
+		return ufw.State{}, fmt.Errorf("read ufw added rules: %w", err)
+	}
+	addedState := ufw.ParseShowAdded(added)
+	state.All = addedState.All
+	if state.Enabled {
+		return state, nil
+	}
+	return addedState, nil
+}
+
+// pruneMarkers deletes entries by marker. A negative count means "all"; a
+// positive count deletes that many, which is how duplicate markers are reduced
+// to one. The state is re-read before every deletion and the deletion targets
+// the entry from that fresh listing, so a rule number is never reused blindly.
+func (r *HostFirewallRuleReconciler) pruneMarkers(ctx context.Context, targets map[string]int) (int, error) {
+	log := logf.FromContext(ctx)
+	deleted := 0
+	var errs []error
+
+	for _, marker := range slices.Sorted(maps.Keys(targets)) {
+		remaining := targets[marker]
+		for remaining != 0 {
+			fresh, err := r.readState(ctx)
+			if err != nil {
+				errs = append(errs, err)
+				break
+			}
+
+			entries := fresh.Find(marker)
+			if len(entries) == 0 {
+				break
+			}
+
+			entry := entries[len(entries)-1]
+			if r.DryRun {
+				log.Info("Dry run: would delete rule", "marker", marker)
+			} else {
+				start := time.Now()
+				if err := r.deleteEntry(ctx, fresh.Enabled, entry); err != nil {
+					errs = append(errs, fmt.Errorf("delete rule %s: %w", marker, err))
+					break
+				}
+				applyDuration.Observe(time.Since(start).Seconds())
+			}
+
+			deleted++
+			if remaining > 0 {
+				remaining--
+			}
+			if r.DryRun && remaining < 0 {
+				break
+			}
+		}
+	}
+
+	return deleted, errors.Join(errs...)
+}
+
+func (r *HostFirewallRuleReconciler) deleteEntry(ctx context.Context, enabled bool, entry ufw.Entry) error {
+	if enabled && entry.Number > 0 {
+		_, err := r.Ufw.Run(ctx, "--force", "delete", strconv.Itoa(entry.Number))
+		return err
+	}
+
+	// Keep the comment: ufw's delete matches the first rule with the same
+	// specification when the delete rule has no comment, which could remove an
+	// identical unmanaged rule. The comment makes the deletion target exactly
+	// the rule this operator owns.
+	args := append([]string{"delete"}, entry.Args...)
+	_, err := r.Ufw.Run(ctx, args...)
+	return err
+}
