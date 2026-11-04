@@ -56,6 +56,30 @@ Always use `kubebuilder create api` and `kubebuilder create webhook` to scaffold
 The e2e tests are designed to validate the solution in an isolated environment (similar to GitHub Actions CI).
 Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluster (not your “real” dev/prod cluster).
 
+## Commit Messages
+
+Releases and the changelog are automated with [Release Please](release-please-config.json), which derives version bumps from commit messages. **Every commit must follow the [Conventional Commits](https://www.conventionalcommits.org/) format:**
+
+```
+<type>[(scope)][!]: <description>
+```
+
+**Release impact:**
+
+| Type | Release impact |
+| --- | --- |
+| `feat` | minor |
+| `fix` | patch |
+| `feat!`, `fix!`, or a `BREAKING CHANGE:` footer | major |
+| `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert` | no release on their own |
+
+**Rules:**
+- Write the description in the imperative mood, lower case, without a trailing period: `add rule repair interval flag`, not `Added rule repair interval flag.`
+- Use a scope when it clarifies the affected area: `fix(controller):`, `feat(chart):`, `chore(deps):`.
+- Keep one logical change per commit so it maps to a single changelog entry.
+- Mark breaking changes explicitly with `!` after the type/scope, and explain them in a `BREAKING CHANGE:` footer.
+- Release Please assigns commits to the module and the Helm chart by changed paths, not by scope; a commit touching only `charts/host-firewall-controller/` belongs to that package.
+
 ## After Making Changes
 
 **After editing `*_types.go` or markers:**
