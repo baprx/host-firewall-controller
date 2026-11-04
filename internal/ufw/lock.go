@@ -52,3 +52,45 @@ func AcquireLock(path string) (func() error, error) {
 		return file.Close()
 	}, nil
 }
+
+// acquireUFWLock takes the same fcntl lock ufw uses around a command. ufw
+// loads its rule files before taking that lock, so starting ufw only after the
+// helper already owns the lock keeps its read and write serialized with every
+// other ufw invocation that goes through this helper. This prevents a reader
+// from observing the non-atomic rule-file rewrite and then replacing a rule it
+// never saw.
+//
+// The returned file must stay open across execve. fcntl locks are preserved
+// across exec and are per-process, so ufw's own lock request on the same file
+// succeeds and its release unlocks the inherited lock as well.
+func acquireUFWLock(path string) (*os.File, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open ufw lock file %s: %w", path, err)
+	}
+
+	lock := unix.Flock_t{
+		Type:   unix.F_WRLCK,
+		Whence: 0,
+		Start:  0,
+		Len:    0,
+	}
+	if err := unix.FcntlFlock(file.Fd(), unix.F_SETLKW, &lock); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("lock %s: %w", path, err)
+	}
+
+	if _, err := unix.FcntlInt(file.Fd(), unix.F_SETFD, 0); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("clear close-on-exec for %s: %w", path, err)
+	}
+
+	return file, nil
+}
+
+func ufwLockPath() string {
+	if os.Geteuid() == 0 {
+		return "/run/ufw.lock"
+	}
+	return "/etc/ufw/ufw.lock"
+}
