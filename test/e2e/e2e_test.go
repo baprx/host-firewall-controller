@@ -40,6 +40,10 @@ const (
 	daemonSet    = "hfc-e2e"
 	ruleNamespac = "default"
 	ufwBinary    = "/usr/sbin/ufw"
+
+	// controllerLockPath is the manager's host lock (--lock-path default for
+	// hostRoot /host). Tests take it to freeze sweeps while observing ufw.
+	controllerLockPath = "/run/host-firewall-controller.lock"
 )
 
 var (
@@ -194,8 +198,14 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 			g.Expect(ufwRun("show", "added")).To(ContainSubstring(marker))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
-		ufwRun("delete", "allow", "proto", "tcp", "to", "any", "port", "9994")
-		Expect(ufwRun("show", "added")).NotTo(ContainSubstring(marker))
+		// Delete the rule while holding the controller's host lock. The sweep
+		// takes that lock non-blocking, so it cannot repair the rule between the
+		// deletion and the assertion. Without the lock the next sweep can land
+		// in that window and the absence check races the repair.
+		locked := nodeRun("flock", controllerLockPath, "sh", "-c",
+			ufwBinary+" delete allow proto tcp to any port 9994 && "+
+				ufwBinary+" show added")
+		Expect(locked).NotTo(ContainSubstring(marker))
 
 		Eventually(func(g Gomega) {
 			g.Expect(ufwRun("show", "added")).To(ContainSubstring(marker))
@@ -281,6 +291,16 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 		Expect(firstLine(ufwRun("status"))).To(Equal(initialStatus))
 	})
 })
+
+// nodeRun executes a command on this test's kind node. The manager image is
+// distroless, so tools such as flock are only available on the node itself.
+func nodeRun(args ...string) string {
+	cmd := exec.Command(containerCLI, append([]string{"exec", nodeName}, args...)...)
+	output, err := utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(),
+		"%s failed: %s", strings.Join(cmd.Args, " "), output)
+	return output
+}
 
 // ufwRun executes the host ufw inside the operator pod's node through the
 // manager's built-in chroot helper.
