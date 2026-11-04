@@ -52,8 +52,11 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 	// resurrected from the snapshot, and the whole node is checked against the
 	// cap before any rule is added.
 	type sweepTarget struct {
+		cr       securityv1alpha1.HostFirewallRule
 		token    string
 		rules    []ufw.Rule
+		exp      expansion
+		prev     securityv1alpha1.NodeStatus
 		comments bool
 	}
 	var targets []sweepTarget
@@ -79,8 +82,11 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 		prev := current.Status.Nodes[r.NodeName]
 		exp := r.expand(ctx, &current, prev)
 		targets = append(targets, sweepTarget{
+			cr:       current,
 			token:    ufw.TokenFor(current.Namespace, current.Name, string(current.UID)),
 			rules:    exp.Rules,
+			exp:      exp,
+			prev:     prev,
 			comments: prev.CommentsUnsupported,
 		})
 		ruleCount += len(exp.Rules)
@@ -101,33 +107,27 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 		if result.Err != nil {
 			errs = append(errs, result.Err)
 		}
+
+		// The sweep repairs drift that no reconcile will report, so it must
+		// publish the resulting status itself. A CR deleted while the sweep
+		// runs has no status to update.
+		status := r.statusFor(&target.cr, target.exp, result, target.prev, true)
+		// lastAppliedTime also gates the hostname resolution cache, so a sweep
+		// that changed nothing must leave it alone.
+		if result.Added == 0 && result.Deleted == 0 {
+			status.LastAppliedTime = target.prev.LastAppliedTime
+		}
+		if err := r.patchStatus(ctx, &target.cr, status); err != nil && !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("patch status for rule %s/%s: %w",
+				target.cr.Namespace, target.cr.Name, err))
+		}
 	}
 
 	// Compute the expected set again after convergence. A CR deleted while the
 	// loop was running must not keep its just-added rules until the next sweep.
-	var fresh securityv1alpha1.HostFirewallRuleList
-	if err := r.List(ctx, &fresh); err != nil {
-		return fmt.Errorf("list rules: %w", err)
-	}
-
-	expected := map[string]ufw.Rule{}
-	ruleCount = 0
-	for i := range fresh.Items {
-		cr := &fresh.Items[i]
-
-		matches, err := node.Matches(cr.Spec.NodeSelector, nodeObject.Labels)
-		if err != nil || !matches {
-			continue
-		}
-
-		prev := cr.Status.Nodes[r.NodeName]
-		exp := r.expand(ctx, cr, prev)
-
-		token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
-		for _, rule := range exp.Rules {
-			expected[ufw.MarkerFor(token, rule).String()] = rule
-			ruleCount++
-		}
+	expected, ruleCount, err := r.expectedRules(ctx, nodeObject.Labels)
+	if err != nil {
+		return errors.Join(append(errs, err)...)
 	}
 
 	if r.MaxRulesPerNode > 0 && ruleCount > r.MaxRulesPerNode {
@@ -135,6 +135,15 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 			ruleCount, r.MaxRulesPerNode)
 		log.Error(err, "Refusing to prune")
 		return errors.Join(append(errs, err)...)
+	}
+
+	// The delete phase is only safe when every rule converged. If a CR could
+	// not be fetched or an add failed or was refused, pruning would delete the
+	// last working rule (and rules of a CR that was only transiently
+	// unreadable) instead of keeping the previous configuration.
+	if len(errs) > 0 {
+		log.Error(errors.Join(errs...), "Skipping prune because convergence failed")
+		return errors.Join(errs...)
 	}
 
 	pruneErr := r.withLock(func() error {
@@ -176,4 +185,38 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// expectedRules lists the concrete markers and rules every CR matching this node
+// wants. It is recomputed after convergence so a CR deleted mid-sweep cannot
+// leave rules behind.
+func (r *HostFirewallRuleReconciler) expectedRules(
+	ctx context.Context,
+	nodeLabels map[string]string,
+) (map[string]ufw.Rule, int, error) {
+	var fresh securityv1alpha1.HostFirewallRuleList
+	if err := r.List(ctx, &fresh); err != nil {
+		return nil, 0, fmt.Errorf("list rules: %w", err)
+	}
+
+	expected := map[string]ufw.Rule{}
+	count := 0
+	for i := range fresh.Items {
+		cr := &fresh.Items[i]
+
+		matches, err := node.Matches(cr.Spec.NodeSelector, nodeLabels)
+		if err != nil || !matches {
+			continue
+		}
+
+		prev := cr.Status.Nodes[r.NodeName]
+		exp := r.expand(ctx, cr, prev)
+
+		token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
+		for _, rule := range exp.Rules {
+			expected[ufw.MarkerFor(token, rule).String()] = rule
+			count++
+		}
+	}
+	return expected, count, nil
 }
