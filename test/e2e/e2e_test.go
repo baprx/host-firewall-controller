@@ -155,7 +155,10 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 
 	It("refuses to coalesce with an identical unmanaged rule", func() {
 		const unmanagedPort = "9995"
-		ufwRun("allow", "proto", "tcp", "to", "any", "port", unmanagedPort)
+		addOutput := ufwRun("allow", "proto", "tcp", "to", "any", "port", unmanagedPort)
+		addedBeforeApply := ufwRun("show", "added")
+		fmt.Fprintf(GinkgoWriter, "unmanaged add output:\n%s\nshow added before apply:\n%s\n",
+			addOutput, addedBeforeApply)
 
 		name := "e2e-unmanaged-collision"
 		applyRule(name, `
@@ -165,9 +168,16 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
     ports: ["9995"]
 `)
 
+		dumped := false
 		Eventually(func(g Gomega) {
 			status := nodeStatus(name, nodeName)
 			g.Expect(status).NotTo(BeNil())
+			if applied, _ := status["applied"].(bool); applied && !dumped {
+				dumped = true
+				fmt.Fprintf(GinkgoWriter,
+					"collision unexpectedly applied\nstatus: %#v\nshow added:\n%s\nstatus numbered:\n%s\nmanager logs:\n%s\n",
+					status, ufwRun("show", "added"), ufwRun("status", "numbered"), managerLogs())
+			}
 			g.Expect(status["applied"]).To(BeFalse())
 			g.Expect(status["degraded"]).To(BeTrue())
 			g.Expect(status["message"]).To(ContainSubstring("refusing to modify"))
@@ -332,6 +342,16 @@ func mustKubectl(args ...string) string {
 	output, err := utils.Run(exec.Command("kubectl", args...))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(),
 		"kubectl %s failed: %s", strings.Join(args, " "), output)
+	return output
+}
+
+// managerLogs returns the controller logs for diagnostics.
+func managerLogs() string {
+	output, err := utils.Run(exec.Command("kubectl", "logs", "-n", namespace, podName,
+		"--all-containers", "--tail=400"))
+	if err != nil {
+		return fmt.Sprintf("could not read manager logs: %v\n%s", err, output)
+	}
 	return output
 }
 
