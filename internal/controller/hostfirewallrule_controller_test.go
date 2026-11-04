@@ -32,6 +32,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -67,8 +68,9 @@ type fakeHost struct {
 	rules []fakeRule
 	ops   []string
 
-	failAdd    error
-	failStatus error
+	failAdd     error
+	failPrepend error
+	failStatus  error
 }
 
 func newFakeHost(enabled bool) *fakeHost {
@@ -118,6 +120,9 @@ func (f *fakeHost) Run(_ context.Context, args ...string) (string, error) {
 	default:
 		if f.failAdd != nil {
 			return "", f.failAdd
+		}
+		if f.failPrepend != nil && len(args) > 0 && args[0] == "prepend" {
+			return "", f.failPrepend
 		}
 		return f.add(args)
 	}
@@ -333,8 +338,10 @@ func (f *fakeHost) resetOps() {
 	f.ops = nil
 }
 
+// fakeIsAnyAddress mirrors ufw: only an omitted address (parsed as "any") spans
+// both families. An explicit 0.0.0.0/0 or ::/0 is still one family.
 func fakeIsAnyAddress(address string) bool {
-	return address == "" || address == "any" || address == "0.0.0.0/0" || address == "::/0"
+	return address == "" || address == "any"
 }
 
 // parseFakeRule understands the short and extended forms ufw writes to
@@ -345,15 +352,19 @@ func parseFakeRule(args []string) (ufw.Rule, bool) {
 	}
 
 	rule := ufw.Rule{
-		Action:    ufw.Action(args[0]),
 		Direction: ufw.DirectionIn,
 		Protocol:  ufw.ProtocolAny,
 	}
-	i := 1
-	if i < len(args) && args[i] == "prepend" {
+	i := 0
+	if args[i] == "prepend" {
 		rule.Prepend = true
 		i++
 	}
+	if i >= len(args) {
+		return ufw.Rule{}, false
+	}
+	rule.Action = ufw.Action(args[i])
+	i++
 	if i < len(args) && (args[i] == "in" || args[i] == "out") {
 		rule.Direction = ufw.Direction(args[i])
 		i++
@@ -443,6 +454,17 @@ func parseFullFakeRule(rule *ufw.Rule, args []string, i int) int {
 }
 
 // helpers shared by the controller specs.
+
+// recordingRecorder captures emitted event reasons for assertions.
+type recordingRecorder struct {
+	events []string
+}
+
+func (r *recordingRecorder) Eventf(
+	_ runtime.Object, _ runtime.Object, _, reason, _, note string, _ ...any,
+) {
+	r.events = append(r.events, reason+" "+note)
+}
 
 func newReconciler(host *fakeHost, nodeName string) *HostFirewallRuleReconciler {
 	return &HostFirewallRuleReconciler{
@@ -585,6 +607,61 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(addIndex).To(BeNumerically("<", deleteIndex))
 	})
 
+	It("updates the action of its own rule in place", func() {
+		name := uniqueRuleName("actionchange")
+		createRule(name, allowTCP("22"))
+		mustReconcile(reconciler, name)
+		Expect(host.count()).To(Equal(1))
+
+		rule := fetchRule(name)
+		rule.Spec.Action = securityv1alpha1.ActionDeny
+		Expect(k8sClient.Update(ctx, rule)).To(Succeed())
+
+		mustReconcile(reconciler, name)
+
+		Expect(host.count()).To(Equal(1))
+		Expect(host.snapshot()[0].rule.Action).To(Equal(ufw.ActionDeny))
+		Expect(fetchRule(name).Status.Nodes[nodeName].Applied).To(BeTrue())
+	})
+
+	It("moves its own rule when prepend changes", func() {
+		name := uniqueRuleName("prependchange")
+		createRule(name, allowTCP("22"))
+		mustReconcile(reconciler, name)
+		Expect(host.count()).To(Equal(1))
+		Expect(host.snapshot()[0].rule.Prepend).To(BeFalse())
+
+		rule := fetchRule(name)
+		rule.Spec.Prepend = true
+		Expect(k8sClient.Update(ctx, rule)).To(Succeed())
+
+		mustReconcile(reconciler, name)
+
+		Expect(host.count()).To(Equal(1))
+		Expect(host.snapshot()[0].rule.Prepend).To(BeTrue())
+		Expect(fetchRule(name).Status.Nodes[nodeName].Applied).To(BeTrue())
+	})
+
+	It("restores the rule when the prepend move fails", func() {
+		name := uniqueRuleName("prependfail")
+		createRule(name, allowTCP("22"))
+		mustReconcile(reconciler, name)
+		Expect(host.count()).To(Equal(1))
+
+		rule := fetchRule(name)
+		rule.Spec.Prepend = true
+		Expect(k8sClient.Update(ctx, rule)).To(Succeed())
+
+		host.failPrepend = errors.New("ufw: rule file is read-only")
+		_, err := reconcileOnce(reconciler, name)
+		Expect(err).To(HaveOccurred())
+
+		// Moving a rule requires deleting it first. If the prepend then fails,
+		// the rule must be restored in its old position.
+		Expect(host.count()).To(Equal(1))
+		Expect(host.snapshot()[0].rule.Prepend).To(BeFalse())
+	})
+
 	It("does nothing on a node that does not match the selector", func() {
 		name := uniqueRuleName("nomatch")
 		spec := allowTCP("22")
@@ -712,6 +789,31 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(status.Applied).To(BeTrue())
 	})
 
+	It("does not re-add an explicit 0.0.0.0/0 rule on a dual-stack host", func() {
+		host.ipv6 = true
+
+		// Another managed rule makes ufw report an IPv6 entry.
+		anchor := uniqueRuleName("v6anchor")
+		createRule(anchor, allowTCP("9999"))
+		mustReconcile(reconciler, anchor)
+		Expect(host.count()).To(Equal(2))
+
+		name := uniqueRuleName("explicitany")
+		spec := allowTCP("22")
+		spec.From = &securityv1alpha1.EndpointSpec{CIDR: new("0.0.0.0/0")}
+		createRule(name, spec)
+		mustReconcile(reconciler, name)
+		Expect(host.count()).To(Equal(3))
+
+		host.resetOps()
+		mustReconcile(reconciler, name)
+
+		// An explicit 0.0.0.0/0 is a single-family rule, not "any": there is
+		// nothing to add on the second reconcile.
+		Expect(host.opsSnapshot()).To(BeEmpty())
+		Expect(host.count()).To(Equal(3))
+	})
+
 	It("enforces the node cap across all matching HostFirewallRules", func() {
 		reconciler.MaxRulesPerNode = 1
 
@@ -813,6 +915,25 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(rules[0].rule.Command()).To(ContainSubstring("80"))
 	})
 
+	It("keeps the previous rule when a sweep replacement add fails", func() {
+		name := uniqueRuleName("sweepaddfail")
+		createRule(name, allowTCP("80"))
+		mustReconcile(reconciler, name)
+		Expect(host.count()).To(Equal(1))
+
+		rule := fetchRule(name)
+		rule.Spec.To.Ports = []securityv1alpha1.Port{"443"}
+		Expect(k8sClient.Update(ctx, rule)).To(Succeed())
+
+		host.failAdd = errors.New("ufw: rule file is read-only")
+		Expect(reconciler.ReconcileSweep(ctx)).To(HaveOccurred())
+
+		// Pruning after a failed add would remove the only working rule.
+		rules := host.snapshot()
+		Expect(rules).To(HaveLen(1))
+		Expect(rules[0].rule.Command()).To(ContainSubstring("80"))
+	})
+
 	It("retries after a spec change when comments are not reported", func() {
 		host.reportComments = false
 
@@ -862,6 +983,23 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(status.Message).To(ContainSubstring("permission denied"))
 	})
 
+	It("does not repeat the same failure event", func() {
+		recorded := &recordingRecorder{}
+		reconciler.Recorder = recorded
+		host.failAdd = errors.New("permission denied")
+
+		name := uniqueRuleName("eventrepeat")
+		createRule(name, allowTCP("22"))
+
+		_, err := reconcileOnce(reconciler, name)
+		Expect(err).To(HaveOccurred())
+		_, err = reconcileOnce(reconciler, name)
+		Expect(err).To(HaveOccurred())
+
+		// A repeated reconcile with the same failure must not spam the object.
+		Expect(recorded.events).To(HaveLen(1))
+	})
+
 	It("repairs a missing rule during a sweep", func() {
 		name := uniqueRuleName("drift")
 		createRule(name, allowTCP("22"))
@@ -874,6 +1012,51 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(reconciler.ReconcileSweep(ctx)).To(Succeed())
 		Expect(host.count()).To(Equal(1))
 		Expect(host.snapshot()[0].rule.Comment).To(HavePrefix("HFC:default/" + name + ":"))
+	})
+
+	It("refreshes status after a sweep repairs drift", func() {
+		name := uniqueRuleName("sweepstatus")
+		createRule(name, allowTCP("22"))
+		mustReconcile(reconciler, name)
+		Expect(host.count()).To(Equal(1))
+
+		// Simulate a status left stale by an earlier failure.
+		rule := fetchRule(name)
+		stale := rule.Status.Nodes[nodeName]
+		stale.Applied = false
+		stale.Degraded = true
+		stale.Message = "stale"
+		rule.Status.Nodes[nodeName] = stale
+		Expect(reconciler.patchStatus(ctx, rule, stale)).To(Succeed())
+
+		host.clear()
+		Expect(reconciler.ReconcileSweep(ctx)).To(Succeed())
+
+		status := fetchRule(name).Status.Nodes[nodeName]
+		Expect(status.Applied).To(BeTrue())
+		Expect(status.Degraded).To(BeFalse())
+		Expect(status.Message).To(BeEmpty())
+	})
+
+	It("does not touch lastAppliedTime on a no-op sweep", func() {
+		name := uniqueRuleName("sweeptimestamp")
+		createRule(name, allowTCP("22"))
+		mustReconcile(reconciler, name)
+
+		rule := fetchRule(name)
+		prev := rule.Status.Nodes[nodeName]
+		old := metav1.NewTime(time.Now().Add(-time.Hour))
+		prev.LastAppliedTime = &old
+		Expect(reconciler.patchStatus(ctx, rule, prev)).To(Succeed())
+		patched := fetchRule(name).Status.Nodes[nodeName].LastAppliedTime
+		Expect(patched).NotTo(BeNil())
+
+		Expect(reconciler.ReconcileSweep(ctx)).To(Succeed())
+
+		// lastAppliedTime also gates the hostname resolution cache. A sweep that
+		// changes nothing must not make cached addresses look fresh forever.
+		after := fetchRule(name).Status.Nodes[nodeName]
+		Expect(after.LastAppliedTime.Time.Equal(patched.Time)).To(BeTrue())
 	})
 
 	It("prunes rules after the HostFirewallRule is deleted", func() {
@@ -1015,6 +1198,12 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(status).To(HaveKey(otherNodeName))
 	})
 
+	It("refuses to delete a rule with no number or arguments", func() {
+		err := reconciler.deleteEntry(ctx, ufw.Entry{})
+		Expect(err).To(HaveOccurred())
+		Expect(host.opsSnapshot()).To(BeEmpty())
+	})
+
 	It("maps node label changes to every rule on that node only", func() {
 		first := uniqueRuleName("map1")
 		second := uniqueRuleName("map2")
@@ -1059,6 +1248,19 @@ var _ = Describe("HostFirewallRule controller", func() {
 				}
 				for i := range 16 {
 					spec.To.Ports = append(spec.To.Ports, securityv1alpha1.Port(strconv.Itoa(1000+i)))
+				}
+				return spec
+			}(),
+			func() securityv1alpha1.HostFirewallRuleSpec {
+				spec := securityv1alpha1.HostFirewallRuleSpec{
+					Action:   securityv1alpha1.ActionAllow,
+					Protocol: securityv1alpha1.ProtocolTCP,
+					To:       &securityv1alpha1.ToSpec{},
+				}
+				for i := range 8 {
+					start := 1000 + i*10
+					spec.To.Ports = append(spec.To.Ports,
+						securityv1alpha1.Port(fmt.Sprintf("%d:%d", start, start+5)))
 				}
 				return spec
 			}(),
@@ -1120,5 +1322,31 @@ var _ = Describe("HostFirewallRule controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, rule)).NotTo(Succeed(), "case %d should be rejected", i)
 		}
+	})
+
+	It("accepts ports that fit ufw's 15-entry limit", func() {
+		singles := securityv1alpha1.HostFirewallRuleSpec{
+			Action:   securityv1alpha1.ActionAllow,
+			Protocol: securityv1alpha1.ProtocolTCP,
+			To:       &securityv1alpha1.ToSpec{},
+		}
+		for i := range 15 {
+			singles.To.Ports = append(singles.To.Ports, securityv1alpha1.Port(strconv.Itoa(1000+i)))
+		}
+		createRule(uniqueRuleName("fifteenports"), singles)
+
+		// A range counts as two, so seven ranges plus one port is exactly 15.
+		ranges := securityv1alpha1.HostFirewallRuleSpec{
+			Action:   securityv1alpha1.ActionAllow,
+			Protocol: securityv1alpha1.ProtocolTCP,
+			To:       &securityv1alpha1.ToSpec{},
+		}
+		for i := range 7 {
+			start := 2000 + i*10
+			ranges.To.Ports = append(ranges.To.Ports,
+				securityv1alpha1.Port(fmt.Sprintf("%d:%d", start, start+5)))
+		}
+		ranges.To.Ports = append(ranges.To.Ports, securityv1alpha1.Port("80"))
+		createRule(uniqueRuleName("rangesandport"), ranges)
 	})
 })
