@@ -5,8 +5,11 @@ go 1.26.0
 require (
 	github.com/onsi/ginkgo/v2 v2.27.4
 	github.com/onsi/gomega v1.39.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
+	github.com/prometheus/client_golang v1.24.0
+	golang.org/x/sys v0.47.0
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/client-go v0.37.2
 	sigs.k8s.io/controller-runtime v0.25.0
 )
 
@@ -54,7 +57,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.24.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.0 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
@@ -79,7 +81,6 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -91,13 +92,12 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.37.0 // indirect
 	k8s.io/apiextensions-apiserver v0.37.0 // indirect
 	k8s.io/apiserver v0.37.0 // indirect
 	k8s.io/component-base v0.37.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	k8s.io/streaming v0.37.0 // indirect
+	k8s.io/streaming v0.37.2 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
