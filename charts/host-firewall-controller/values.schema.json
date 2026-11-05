@@ -88,6 +88,11 @@
         "create": { "type": "boolean" }
       }
     },
-    "commonLabels": { "type": "object", "additionalProperties": { "type": "string" } }
+    "commonLabels": { "type": "object", "additionalProperties": { "type": "string" } },
+    "rules": {
+      "description": "HostFirewallRule resources keyed by name; each value is the rule spec.",
+      "type": "object",
+      "additionalProperties": { "type": "object" }
+    }
   }
 }

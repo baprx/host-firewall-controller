@@ -4,116 +4,162 @@
 # UFW rules of its own node only.
 
 image:
-  # repository is the operator image.
+  # -- Container image repository.
   repository: ghcr.io/baprx/host-firewall-controller
-  # tag defaults to .Chart.AppVersion when empty.
+  # -- Container image tag. Defaults to .Chart.AppVersion when empty.
   tag: ""
+  # -- Container image pull policy.
   pullPolicy: IfNotPresent
 
+# -- Secrets used to pull the image from a private registry.
 imagePullSecrets: []
 
+# -- Override the chart name used in resource names.
 nameOverride: ""
+# -- Override the full release name used in resource names.
 fullnameOverride: ""
 
-# nodeSelector restricts which nodes receive the DaemonSet. Linux is required.
+# -- Nodes that receive the DaemonSet pods. Linux is required.
 nodeSelector:
   kubernetes.io/os: linux
 
-# tolerations defaults to running on every node, including control planes.
+# -- Tolerations for the DaemonSet pods. The default runs on every node,
+# including control planes.
 tolerations:
   - operator: Exists
 
+# -- Priority class of the DaemonSet pods.
 priorityClassName: system-node-critical
 
-# hostRoot is where the host root filesystem is mounted inside the pod.
+# -- Path where the host root filesystem is mounted inside the pod.
 hostRoot: /host
 
-# ufwPath is the ufw binary path inside the host root.
+# -- Path of the ufw binary inside the host root.
 ufwPath: /usr/sbin/ufw
 
-# sweepInterval is how often orphaned rules are pruned from this node.
+# -- How often orphaned rules are pruned from a node.
 sweepInterval: 5m
 
-# defaultRefreshInterval is the hostname refresh interval for rules that do not
-# set spec.resolve.refreshInterval.
+# -- Hostname refresh interval for rules that do not set
+# spec.resolve.refreshInterval.
 defaultRefreshInterval: 5m
 
-# minRefreshInterval is the floor applied to per-rule refresh intervals.
+# -- Floor applied to per-rule refresh intervals.
 minRefreshInterval: 30s
 
-# maxRulesPerNode stops convergence when a node would exceed this many managed
-# rules. Existing rules are left untouched.
+# -- Stop converging on a node that would exceed this many managed rules.
 maxRulesPerNode: 256
 
-# maxRulesPerCR caps how many concrete rules one HostFirewallRule may expand to.
+# -- Maximum number of concrete rules one HostFirewallRule may expand to.
 maxRulesPerCR: 64
 
-# maxAddresses caps how many addresses are used per hostname by default.
+# -- Maximum number of addresses used per hostname by default.
 maxAddresses: 16
 
-# dryRun logs the ufw commands instead of running them.
+# -- Log the ufw commands instead of running them. Nothing is written to a host
+# while this is true.
 dryRun: false
 
-# allowMissingUFW keeps the pod running when ufw is missing or older than 0.36.
+# -- Keep the pod running when ufw is missing or older than 0.36.
 allowMissingUFW: false
 
-# extraArgs appends raw flags to the manager.
+# -- Extra raw flags appended to the manager.
 extraArgs: []
 
-# lockPath is the host-wide ufw lock file. Defaults to <hostRoot>/run/...
+# -- Host-wide ufw lock file. Defaults to <hostRoot>/run/host-firewall-controller.lock.
 lockPath: ""
 
+# -- Annotations added to the DaemonSet pods.
 podAnnotations: {}
+# -- Labels added to the DaemonSet pods.
 podLabels: {}
 
-# updateStrategy controls the DaemonSet rollout.
+# -- DaemonSet rollout strategy.
 updateStrategy:
+  # -- Update strategy type.
   type: RollingUpdate
+  # -- Rolling update settings.
   rollingUpdate:
+    # -- Maximum number of pods unavailable during a rollout.
     maxUnavailable: 1
 
-# terminationGracePeriodSeconds leaves time for an in-flight ufw command.
+# -- Time given to an in-flight ufw command before the pod is terminated.
 terminationGracePeriodSeconds: 60
 
-# resources for the manager container.
+# -- Resource requests and limits for the manager container.
 resources: {}
 
-# securityContext of the manager container. chroot and ufw require privileges,
-# and ufw must write root-owned files inside the host root.
+# -- Security context of the manager container. chroot and ufw require
+# privileges, and ufw must write root-owned files inside the host root.
 securityContext:
+  # -- User ID the container runs as.
   runAsUser: 0
+  # -- Group ID the container runs as.
   runAsGroup: 0
+  # -- Run the container privileged.
   privileged: true
+  # -- Allow the container to gain privileges.
   allowPrivilegeEscalation: true
+  # -- Keep the container filesystem writable.
   readOnlyRootFilesystem: false
 
 healthProbe:
-  # bindAddress is passed to --health-probe-bind-address.
+  # -- Address the health probe server binds to.
   bindAddress: ":8081"
-  # port is the container port used by the probes.
+  # -- Container port used by the probes.
   port: 8081
 
 metrics:
+  # -- Expose Prometheus metrics.
   enabled: true
-  # bindAddress is passed to --metrics-bind-address.
+  # -- Address the metrics server binds to.
   bindAddress: ":8080"
-  # port is the container and Service port.
+  # -- Container and Service port for metrics.
   port: 8080
+
   service:
+    # -- Create a Service for the metrics endpoint.
     enabled: true
+    # -- Service type.
     type: ClusterIP
+
   serviceMonitor:
+    # -- Create a ServiceMonitor for the metrics Service.
     enabled: false
+    # -- Scrape interval.
     interval: 30s
+    # -- Scrape timeout.
     scrapeTimeout: 10s
+    # -- Extra labels for the ServiceMonitor.
     labels: {}
 
 serviceAccount:
+  # -- Create a ServiceAccount for the manager.
   create: true
+  # -- ServiceAccount name. Defaults to the full release name when empty.
   name: ""
+  # -- Annotations added to the ServiceAccount.
   annotations: {}
 
 rbac:
+  # -- Create the ClusterRole and ClusterRoleBinding.
   create: true
 
+# -- Labels added to every resource.
 commonLabels: {}
+
+# -- HostFirewallRule resources keyed by their name. Each value is the rule
+# spec, passed through to the CRD verbatim, so any field the operator supports
+# can be set here. A rule applies to every node unless its spec sets
+# nodeSelector. Nothing is applied to a host while dryRun is true.
+rules: {}
+# Example, mirroring config/samples/security_v1alpha1_hostfirewallrule.yaml:
+# rules:
+#   allow-ssh-office:
+#     action: allow
+#     protocol: tcp
+#     comment: SSH from the office
+#     from:
+#       cidr: 203.0.113.0/24
+#     to:
+#       ports: ["22"]

@@ -1,0 +1,28 @@
+{{- /*
+HostFirewallRule resources, one per entry in .Values.rules. The map key is the
+resource name and the value is used as the rule spec, so any field the CRD
+accepts can be set from values without changing this template.
+
+Nothing is written to a host while dryRun is true.
+*/ -}}
+{{- if not (kindIs "map" .Values.rules) }}
+{{- fail "rules must be a map keyed by HostFirewallRule name" }}
+{{- end }}
+{{- range $name, $spec := (.Values.rules | default dict) }}
+{{- if not $name }}
+{{- fail "rules must not contain an empty rule name" }}
+{{- end }}
+{{- if not $spec }}
+{{- fail (printf "rules.%s: the rule spec must not be empty" $name) }}
+{{- end }}
+---
+apiVersion: security.baprx.github.io/v1alpha1
+kind: HostFirewallRule
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hfc.labels" $ | nindent 4 }}
+spec:
+  {{- toYaml $spec | nindent 2 }}
+{{- end }}

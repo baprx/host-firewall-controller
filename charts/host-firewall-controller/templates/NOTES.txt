@@ -8,9 +8,16 @@ Check the rollout:
 
   kubectl -n {{ .Release.Namespace }} rollout status daemonset/{{ include "hfc.fullname" . }}
 
+{{- if not .Values.rules }}
+
 Create a first rule:
 
+  add an entry under `rules` in values.yaml and run `helm upgrade`, or apply a
+  manifest directly:
+
   kubectl apply -f https://raw.githubusercontent.com/baprx/host-firewall-controller/main/config/samples/security_v1alpha1_hostfirewallrule.yaml
+
+{{- end }}
 
 Inspect per-node status:
 
