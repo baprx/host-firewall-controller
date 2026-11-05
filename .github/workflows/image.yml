@@ -6,7 +6,15 @@ on:
       - main
     tags:
       - "v*"
+    paths: &image-paths
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/image.yml"
   pull_request:
+    paths: *image-paths
 
 permissions: {}
 

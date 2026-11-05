@@ -4,7 +4,18 @@ on:
   push:
     branches:
       - main
+    paths: &e2e-paths
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "hack/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "charts/host-firewall-controller/**"
+      - ".github/workflows/test-e2e.yml"
   pull_request:
+    paths: *e2e-paths
 
 permissions: {}
 

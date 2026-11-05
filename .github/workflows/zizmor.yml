@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - main
+    paths: &zizmor-paths
+      - ".github/workflows/**"
+      - ".github/actions/**"
   pull_request:
+    paths: *zizmor-paths
 
 permissions: {}
 
