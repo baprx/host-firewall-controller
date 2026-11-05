@@ -1,0 +1,81 @@
+name: Renovate Generated Files
+
+# The Mend-hosted Renovate app cannot run postUpgradeTasks, so regenerate the
+# files derived from the controller-tools version here and push them back to
+# the Renovate pull request.
+on:
+  pull_request:
+    paths:
+      - "Makefile"
+
+permissions: {}
+
+concurrency:
+  group: renovate-regenerate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    name: Regenerate
+    # Only same-repository pull requests opened by Renovate may push generated
+    # files back. Check the PR author rather than github.actor: the latter is
+    # the last actor that touched the branch and can be spoofed. A rerun on the
+    # PAT push is harmless: it finds no diff and pushes nothing.
+    if: >-
+      github.event.pull_request.user.login == 'renovate[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Check whether controller-tools changed
+        id: controller-tools
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff "origin/${BASE_REF}...HEAD" -- Makefile \
+            | grep -E '^[+-]CONTROLLER_TOOLS_VERSION' > /dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # helm-sync copies the generated CRD into the chart, and generate
+      # rewrites the DeepCopy code, so all three must stay in step.
+      - name: Regenerate generated files
+        if: steps.controller-tools.outputs.changed == 'true'
+        run: make generate manifests helm-sync
+
+      - name: Commit and push the regenerated files
+        if: steps.controller-tools.outputs.changed == 'true'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # Use a PAT so the push triggers CI on the pull request, which lets
+          # Renovate automerge once the checks are green. A GITHUB_TOKEN push
+          # would not trigger any workflow.
+          TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Generated files are already up to date"
+            exit 0
+          fi
+
+          version=$(sed -nE 's/^CONTROLLER_TOOLS_VERSION[[:space:]]*\?=[[:space:]]*//p' Makefile)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(deps): regenerate generated files for controller-tools ${version}"
+          git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"
