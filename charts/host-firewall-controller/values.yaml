@@ -75,9 +75,6 @@ maxAddresses: 16
 # while this is true.
 dryRun: false
 
-# -- Keep the pod running when ufw is missing or older than 0.36.
-allowMissingUFW: false
-
 # @schema item: string
 # -- Extra raw flags appended to the manager.
 extraArgs: []
@@ -186,10 +183,6 @@ rbac:
 # -- Labels added to every resource.
 commonLabels: {}
 
-# The rule shape lives in rules.schema.yaml and is referenced below, so the
-# generated values.schema.json validates rule fields. It mirrors the
-# openAPIV3Schema of crds/security.baprx.github.io_hostfirewallrules.yaml; keep
-# both in sync when the CRD changes.
 # -- HostFirewallRule resources keyed by their name. Each value is the rule
 # spec, passed through to the CRD verbatim, so any field the operator supports
 # can be set here. A rule applies to every node unless its spec sets

@@ -74,7 +74,6 @@ func main() {
 		maxRulesPerCR          int
 		maxAddresses           int
 		dryRun                 bool
-		allowMissingUFW        bool
 		lockPath               string
 	)
 
@@ -97,8 +96,6 @@ func main() {
 	flag.IntVar(&maxAddresses, "max-addresses", 16,
 		"Default maximum number of addresses used per hostname.")
 	flag.BoolVar(&dryRun, "dry-run", false, "Log ufw commands instead of executing them.")
-	flag.BoolVar(&allowMissingUFW, "allow-missing-ufw", false,
-		"Do not fail at startup when ufw is missing or too old.")
 	flag.StringVar(&lockPath, "lock-path", "",
 		"Lock file path. Defaults to <host-root>/run/host-firewall-controller.lock.")
 	opts := zap.Options{Development: false}
@@ -122,7 +119,7 @@ func main() {
 	}
 
 	runner := &ufw.ChrootRunner{HostRoot: hostRoot, UfwPath: ufwPath}
-	ufwVersion := checkUFW(allowMissingUFW, runner)
+	ufwVersion := checkUFW(runner)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -209,27 +206,17 @@ func validateSweepInterval(interval time.Duration) error {
 
 // checkUFW fails fast when the host ufw cannot store rule comments, because the
 // operator relies on them for ownership.
-func checkUFW(allowMissing bool, runner ufw.Runner) string {
+func checkUFW(runner ufw.Runner) string {
 	ctx, cancel := context.WithTimeout(context.Background(), ufw.DefaultTimeout)
 	defer cancel()
 
 	version, err := ufw.Version(ctx, runner)
 	if err != nil {
-		if allowMissing {
-			setupLog.Error(err, "ufw is not usable, continuing because --allow-missing-ufw is set")
-			return ""
-		}
 		setupLog.Error(err, "ufw is not usable inside the host root; the operator cannot manage rules")
 		os.Exit(1)
 	}
 
 	if !ufw.SupportsComments(version) {
-		if allowMissing {
-			setupLog.Error(fmt.Errorf("unsupported ufw version"),
-				"ufw is too old for rule comments, continuing because --allow-missing-ufw is set",
-				"version", version)
-			return version
-		}
 		setupLog.Error(fmt.Errorf("unsupported ufw version"),
 			"ufw 0.36 or newer is required because the operator stores ownership in rule comments",
 			"version", version)

@@ -63,9 +63,6 @@ spec:
             {{- if .Values.dryRun }}
             - --dry-run
             {{- end }}
-            {{- if .Values.allowMissingUFW }}
-            - --allow-missing-ufw
-            {{- end }}
             {{- if .Values.lockPath }}
             - --lock-path={{ .Values.lockPath }}
             {{- end }}

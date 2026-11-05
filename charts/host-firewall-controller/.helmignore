@@ -7,3 +7,4 @@ values.md.gotmpl
 *.bak
 *.tmp
 rules.schema.yaml
+.schema.yaml

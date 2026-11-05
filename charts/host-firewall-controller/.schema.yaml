@@ -1,0 +1,11 @@
+values:
+  - charts/host-firewall-controller/values.yaml
+output: charts/host-firewall-controller/values.schema.json
+indent: 2
+bundle: true
+bundleWithoutID: true
+useHelmDocs: true
+noDefaultGlobal: true
+schemaRoot:
+  title: host-firewall-controller values
+  additionalProperties: true

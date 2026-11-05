@@ -6,3 +6,6 @@ repos:
     rev: v2.6.0
     hooks:
       - id: helm-schema
+        args:
+          - --config
+          - charts/host-firewall-controller/.schema.yaml

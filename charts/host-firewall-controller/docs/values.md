@@ -12,7 +12,6 @@ Kubernetes: `>=1.31.0-0`
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| allowMissingUFW | bool | `false` | Keep the pod running when ufw is missing or older than 0.36. |
 | commonLabels | object | `{}` | Labels added to every resource. |
 | defaultRefreshInterval | string | `"5m"` | Hostname refresh interval for rules that do not set spec.resolve.refreshInterval. |
 | dryRun | bool | `false` | Log the ufw commands instead of running them. Nothing is written to a host while this is true. |

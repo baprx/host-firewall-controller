@@ -1,12 +1,8 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "host-firewall-controller values",
   "type": "object",
   "properties": {
-    "allowMissingUFW": {
-      "description": "Keep the pod running when ufw is missing or older than 0.36.",
-      "type": "boolean"
-    },
     "commonLabels": {
       "description": "Labels added to every resource.",
       "type": "object",

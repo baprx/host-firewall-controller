@@ -129,9 +129,9 @@ goroutine from each other.
   with backoff. If any add failed, no rule is deleted in that pass.
 - **DNS failure:** last known-good addresses are kept and status is `degraded`.
   Existing rules are not removed.
-- **Missing/old ufw:** startup fails unless `--allow-missing-ufw` is set. With
-  that flag the pod runs and reports failures in status instead of crash
-  looping.
+- **Missing/old ufw:** startup fails. The operator cannot prove ownership
+  without ufw comments, so the pod crash loops instead of silently doing
+  nothing.
 - **CR deleted, pod down:** the next sweep removes the rules.
 
 ## Uninstall behaviour
