@@ -1,13 +1,30 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
+  ],
   "automerge": false,
   "platformAutomerge": false,
+  "pre-commit": {
+    "enabled": true
+  },
   "packageRules": [
     {
-      "description": "Keep the Go toolchain in mise.toml and go.mod in one update",
-      "matchPackageNames": ["golang/go", "go"],
+      "description": "Keep the Go toolchain in sync across mise.toml, go.mod and the Dockerfile",
+      "matchPackageNames": ["golang", "golang/go", "go"],
       "groupName": "go"
+    },
+    {
+      "description": "Keep helm-docs in sync between mise.toml and pre-commit",
+      "matchPackageNames": ["norwoodj/helm-docs"],
+      "groupName": "helm-docs"
+    },
+    {
+      "description": "Keep the golangci-lint binary and custom build config in sync",
+      "matchDepNames": ["golangci/golangci-lint"],
+      "groupName": "golangci-lint"
     },
     {
       "description": "Automerge non-major updates once CI is green",
@@ -24,9 +41,58 @@
       "automerge": true
     },
     {
-      "description": "Require manual review for major updates",
-      "matchUpdateTypes": ["major"],
-      "automerge": false
+      "description": "Test-only dependencies do not trigger releases",
+      "matchPackageNames": [
+        "github.com/onsi/ginkgo/v2",
+        "github.com/onsi/gomega"
+      ],
+      "semanticCommitType": "chore"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update kustomize in the Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "(?m)^KUSTOMIZE_VERSION\\s*\\?=\\s*v(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"
+      ],
+      "depNameTemplate": "kubernetes-sigs/kustomize",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^kustomize/v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update controller-tools in the Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "(?m)^CONTROLLER_TOOLS_VERSION\\s*\\?=\\s*v(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"
+      ],
+      "depNameTemplate": "kubernetes-sigs/controller-tools",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update golangci-lint in the Makefile",
+      "managerFilePatterns": ["/^Makefile$/"],
+      "matchStrings": [
+        "(?m)^GOLANGCI_LINT_VERSION\\s*\\?=\\s*v(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the golangci-lint version in .custom-gcl.yml",
+      "managerFilePatterns": ["/^\\.custom-gcl\\.yml$/"],
+      "matchStrings": [
+        "(?m)^version:\\s*v(?<currentValue>\\d+\\.\\d+\\.\\d+)\\s*$"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
     }
   ]
 }
