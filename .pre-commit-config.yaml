@@ -1,0 +1,8 @@
+# Regenerate values.schema.json from the chart values on every commit.
+# Requires the helm-values-schema-json plugin:
+#   helm plugin install --verify=false https://github.com/losisin/helm-values-schema-json.git
+repos:
+  - repo: https://github.com/losisin/helm-values-schema-json
+    rev: v2.6.0
+    hooks:
+      - id: helm-schema

@@ -6,3 +6,4 @@ values.md.gotmpl
 *.swp
 *.bak
 *.tmp
+rules.schema.yaml

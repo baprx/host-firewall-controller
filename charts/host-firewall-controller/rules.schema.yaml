@@ -1,0 +1,134 @@
+# JSON Schema for a single HostFirewallRule spec.
+#
+# values.yaml references this file from the `rules` value, so the generated
+# values.schema.json validates every rule field. It mirrors the
+# openAPIV3Schema of crds/security.baprx.github.io_hostfirewallrules.yaml; keep
+# both in sync when the CRD changes.
+type: object
+additionalProperties: false
+required:
+  - action
+properties:
+  action:
+    description: ufw action.
+    type: string
+    enum: [allow, deny, reject, limit]
+  comment:
+    description: Optional human readable note appended after the ownership marker. ufw's comment parser does not accept a single quote or a line break.
+    type: string
+    maxLength: 200
+    pattern: '^[^''\r\n]*$'
+  direction:
+    description: Traffic direction.
+    type: string
+    enum: [in, out]
+    default: in
+  from:
+    description: Source of the traffic. When omitted, ufw's "any" is used.
+    type: object
+    additionalProperties: false
+    properties:
+      cidr:
+        description: IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.
+        type: string
+      host:
+        description: Fully qualified domain name resolved on every node.
+        type: string
+        maxLength: 253
+        pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.?$'
+      port:
+        description: Port or port range on this side of the rule.
+        type: string
+        maxLength: 11
+        pattern: '^[0-9]{1,5}(:[0-9]{1,5})?$'
+  interface:
+    description: Network interface the rule is limited to.
+    type: string
+    maxLength: 15
+  log:
+    description: Enable per-rule logging.
+    type: boolean
+    default: false
+  nodeSelector:
+    description: Nodes the rule applies to. An empty selector applies it to every node.
+    type: object
+    additionalProperties: false
+    properties:
+      matchLabels:
+        description: Map of label key/value pairs the node must match.
+        type: object
+        additionalProperties:
+          type: string
+      matchExpressions:
+        description: List of label selector requirements. The requirements are ANDed.
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [key, operator]
+          properties:
+            key:
+              type: string
+            operator:
+              type: string
+              enum: [In, NotIn, Exists, DoesNotExist]
+            values:
+              type: array
+              items:
+                type: string
+  prepend:
+    description: Place the rule before all existing rules of the same IP family instead of appending it.
+    type: boolean
+    default: false
+  protocol:
+    description: Layer 4 protocol. "any" lets ufw handle both tcp and udp.
+    type: string
+    enum: [tcp, udp, any]
+    default: any
+  resolve:
+    description: Hostname resolution settings.
+    type: object
+    additionalProperties: false
+    properties:
+      ipFamilies:
+        description: Resolved families that become rules.
+        type: array
+        items:
+          type: string
+          enum: [IPv4, IPv6]
+        default: [IPv4, IPv6]
+      maxAddresses:
+        description: Maximum number of addresses used per hostname.
+        type: integer
+        minimum: 1
+        maximum: 64
+        default: 16
+      refreshInterval:
+        description: How often hostnames are resolved again. Values below 30s are clamped. Defaults to the operator's defaultRefreshInterval.
+        type: string
+  to:
+    description: Destination of the traffic. When omitted, ufw's "any" is used.
+    type: object
+    additionalProperties: false
+    properties:
+      cidr:
+        description: IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.
+        type: string
+      host:
+        description: Fully qualified domain name resolved on every node.
+        type: string
+        maxLength: 253
+        pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.?$'
+      port:
+        description: Port or port range on this side of the rule.
+        type: string
+        maxLength: 11
+        pattern: '^[0-9]{1,5}(:[0-9]{1,5})?$'
+      ports:
+        description: Destination ports. Ranges use the start:end form. ufw accepts at most 15 entries, counting a range as two.
+        type: array
+        maxItems: 15
+        items:
+          type: string
+          maxLength: 11
+          pattern: '^[0-9]{1,5}(:[0-9]{1,5})?$'

@@ -18,9 +18,11 @@ Kubernetes: `>=1.31.0-0`
 | dryRun | bool | `false` | Log the ufw commands instead of running them. Nothing is written to a host while this is true. |
 | extraArgs | list | `[]` | Extra raw flags appended to the manager. |
 | fullnameOverride | string | `""` | Override the full release name used in resource names. |
+| healthProbe | object | `{"bindAddress":":8081","port":8081}` | Health probe server settings. |
 | healthProbe.bindAddress | string | `":8081"` | Address the health probe server binds to. |
 | healthProbe.port | int | `8081` | Container port used by the probes. |
 | hostRoot | string | `"/host"` | Path where the host root filesystem is mounted inside the pod. |
+| image | object | `{"pullPolicy":"IfNotPresent","repository":"ghcr.io/baprx/host-firewall-controller","tag":""}` | Container image settings. |
 | image.pullPolicy | string | `"IfNotPresent"` | Container image pull policy. |
 | image.repository | string | `"ghcr.io/baprx/host-firewall-controller"` | Container image repository. |
 | image.tag | string | `""` | Container image tag. Defaults to .Chart.AppVersion when empty. |
@@ -29,6 +31,7 @@ Kubernetes: `>=1.31.0-0`
 | maxAddresses | int | `16` | Maximum number of addresses used per hostname by default. |
 | maxRulesPerCR | int | `64` | Maximum number of concrete rules one HostFirewallRule may expand to. |
 | maxRulesPerNode | int | `256` | Stop converging on a node that would exceed this many managed rules. |
+| metrics | object | `{"bindAddress":":8080","enabled":true,"port":8080,"service":{"enabled":true,"type":"ClusterIP"},"serviceMonitor":{"enabled":false,"interval":"30s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus metrics settings. |
 | metrics.bindAddress | string | `":8080"` | Address the metrics server binds to. |
 | metrics.enabled | bool | `true` | Expose Prometheus metrics. |
 | metrics.port | int | `8080` | Container and Service port for metrics. |
@@ -44,6 +47,7 @@ Kubernetes: `>=1.31.0-0`
 | podAnnotations | object | `{}` | Annotations added to the DaemonSet pods. |
 | podLabels | object | `{}` | Labels added to the DaemonSet pods. |
 | priorityClassName | string | `"system-node-critical"` | Priority class of the DaemonSet pods. |
+| rbac | object | `{"create":true}` | RBAC settings. |
 | rbac.create | bool | `true` | Create the ClusterRole and ClusterRoleBinding. |
 | resources | object | `{}` | Resource requests and limits for the manager container. |
 | rules | object | `{}` | HostFirewallRule resources keyed by their name. Each value is the rule spec, passed through to the CRD verbatim, so any field the operator supports can be set here. A rule applies to every node unless its spec sets nodeSelector. Nothing is applied to a host while dryRun is true. |
@@ -53,6 +57,7 @@ Kubernetes: `>=1.31.0-0`
 | securityContext.readOnlyRootFilesystem | bool | `false` | Keep the container filesystem writable. |
 | securityContext.runAsGroup | int | `0` | Group ID the container runs as. |
 | securityContext.runAsUser | int | `0` | User ID the container runs as. |
+| serviceAccount | object | `{"annotations":{},"create":true,"name":""}` | ServiceAccount settings. |
 | serviceAccount.annotations | object | `{}` | Annotations added to the ServiceAccount. |
 | serviceAccount.create | bool | `true` | Create a ServiceAccount for the manager. |
 | serviceAccount.name | string | `""` | ServiceAccount name. Defaults to the full release name when empty. |

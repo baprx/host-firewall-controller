@@ -2,97 +2,535 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "host-firewall-controller values",
   "type": "object",
-  "additionalProperties": true,
   "properties": {
-    "image": {
+    "allowMissingUFW": {
+      "description": "Keep the pod running when ufw is missing or older than 0.36.",
+      "type": "boolean"
+    },
+    "commonLabels": {
+      "description": "Labels added to every resource.",
       "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "repository": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string" },
-        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      "additionalProperties": {
+        "type": "string"
       }
     },
-    "imagePullSecrets": { "type": "array", "items": { "type": "object" } },
-    "nameOverride": { "type": "string" },
-    "fullnameOverride": { "type": "string" },
-    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
-    "tolerations": { "type": "array", "items": { "type": "object" } },
-    "priorityClassName": { "type": "string" },
-    "hostRoot": { "type": "string", "pattern": "^/" },
-    "ufwPath": { "type": "string", "pattern": "^/" },
-    "sweepInterval": { "type": "string", "pattern": "^([0-9]*[1-9][0-9]*(\\.[0-9]+)?|0*\\.[0-9]*[1-9][0-9]*)(ns|us|µs|ms|s|m|h)$" },
-    "defaultRefreshInterval": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)$" },
-    "minRefreshInterval": { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)$" },
-    "maxRulesPerNode": { "type": "integer", "minimum": 1 },
-    "maxRulesPerCR": { "type": "integer", "minimum": 1 },
-    "maxAddresses": { "type": "integer", "minimum": 1, "maximum": 64 },
-    "dryRun": { "type": "boolean" },
-    "allowMissingUFW": { "type": "boolean" },
-    "extraArgs": { "type": "array", "items": { "type": "string" } },
-    "lockPath": { "type": "string" },
-    "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
-    "podLabels": { "type": "object", "additionalProperties": { "type": "string" } },
-    "updateStrategy": { "type": "object" },
-    "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
-    "resources": { "type": "object" },
-    "securityContext": { "type": "object" },
-    "healthProbe": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "bindAddress": { "type": "string" },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+    "defaultRefreshInterval": {
+      "description": "Hostname refresh interval for rules that do not set spec.resolve.refreshInterval.",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)$"
+    },
+    "dryRun": {
+      "description": "Log the ufw commands instead of running them. Nothing is written to a host while this is true.",
+      "type": "boolean"
+    },
+    "extraArgs": {
+      "description": "Extra raw flags appended to the manager.",
+      "type": "array",
+      "items": {
+        "type": "string"
       }
+    },
+    "fullnameOverride": {
+      "description": "Override the full release name used in resource names.",
+      "type": "string"
+    },
+    "healthProbe": {
+      "description": "Health probe server settings.",
+      "type": "object",
+      "properties": {
+        "bindAddress": {
+          "description": "Address the health probe server binds to.",
+          "type": "string"
+        },
+        "port": {
+          "description": "Container port used by the probes.",
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "hostRoot": {
+      "description": "Path where the host root filesystem is mounted inside the pod.",
+      "type": "string",
+      "pattern": "^/"
+    },
+    "image": {
+      "description": "Container image settings.",
+      "type": "object",
+      "properties": {
+        "pullPolicy": {
+          "description": "Container image pull policy.",
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        },
+        "repository": {
+          "description": "Container image repository.",
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "description": "Container image tag. Defaults to .Chart.AppVersion when empty.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "imagePullSecrets": {
+      "description": "Secrets used to pull the image from a private registry.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "lockPath": {
+      "description": "Host-wide ufw lock file. Defaults to \u003chostRoot\u003e/run/host-firewall-controller.lock.",
+      "type": "string"
+    },
+    "maxAddresses": {
+      "description": "Maximum number of addresses used per hostname by default.",
+      "type": "integer",
+      "maximum": 64,
+      "minimum": 1
+    },
+    "maxRulesPerCR": {
+      "description": "Maximum number of concrete rules one HostFirewallRule may expand to.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "maxRulesPerNode": {
+      "description": "Stop converging on a node that would exceed this many managed rules.",
+      "type": "integer",
+      "minimum": 1
     },
     "metrics": {
+      "description": "Prometheus metrics settings.",
       "type": "object",
-      "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean" },
-        "bindAddress": { "type": "string" },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "bindAddress": {
+          "description": "Address the metrics server binds to.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Expose Prometheus metrics.",
+          "type": "boolean"
+        },
+        "port": {
+          "description": "Container and Service port for metrics.",
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
         "service": {
           "type": "object",
-          "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" },
-            "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] }
-          }
+            "enabled": {
+              "description": "Create a Service for the metrics endpoint.",
+              "type": "boolean"
+            },
+            "type": {
+              "description": "Service type.",
+              "type": "string",
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer"
+              ]
+            }
+          },
+          "additionalProperties": false
         },
         "serviceMonitor": {
           "type": "object",
-          "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean" },
-            "interval": { "type": "string" },
-            "scrapeTimeout": { "type": "string" },
-            "labels": { "type": "object", "additionalProperties": { "type": "string" } }
-          }
+            "enabled": {
+              "description": "Create a ServiceMonitor for the metrics Service.",
+              "type": "boolean"
+            },
+            "interval": {
+              "description": "Scrape interval.",
+              "type": "string"
+            },
+            "labels": {
+              "description": "Extra labels for the ServiceMonitor.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "scrapeTimeout": {
+              "description": "Scrape timeout.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "minRefreshInterval": {
+      "description": "Floor applied to per-rule refresh intervals.",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)$"
+    },
+    "nameOverride": {
+      "description": "Override the chart name used in resource names.",
+      "type": "string"
+    },
+    "nodeSelector": {
+      "description": "Nodes that receive the DaemonSet pods. Linux is required.",
+      "type": "object",
+      "properties": {
+        "kubernetes.io/os": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podAnnotations": {
+      "description": "Annotations added to the DaemonSet pods.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podLabels": {
+      "description": "Labels added to the DaemonSet pods.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "priorityClassName": {
+      "description": "Priority class of the DaemonSet pods.",
+      "type": "string"
+    },
+    "rbac": {
+      "description": "RBAC settings.",
+      "type": "object",
+      "properties": {
+        "create": {
+          "description": "Create the ClusterRole and ClusterRoleBinding.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resources": {
+      "description": "Resource requests and limits for the manager container.",
+      "type": "object"
+    },
+    "rules": {
+      "description": "HostFirewallRule resources keyed by their name. Each value is the rule spec, passed through to the CRD verbatim, so any field the operator supports can be set here. A rule applies to every node unless its spec sets nodeSelector. Nothing is applied to a host while dryRun is true.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/rules.schema.yaml"
+      }
+    },
+    "securityContext": {
+      "description": "Security context of the manager container. chroot and ufw require privileges, and ufw must write root-owned files inside the host root.",
+      "type": "object",
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "description": "Allow the container to gain privileges.",
+          "type": "boolean"
+        },
+        "privileged": {
+          "description": "Run the container privileged.",
+          "type": "boolean"
+        },
+        "readOnlyRootFilesystem": {
+          "description": "Keep the container filesystem writable.",
+          "type": "boolean"
+        },
+        "runAsGroup": {
+          "description": "Group ID the container runs as.",
+          "type": "integer"
+        },
+        "runAsUser": {
+          "description": "User ID the container runs as.",
+          "type": "integer"
         }
       }
     },
     "serviceAccount": {
+      "description": "ServiceAccount settings.",
       "type": "object",
-      "additionalProperties": false,
       "properties": {
-        "create": { "type": "boolean" },
-        "name": { "type": "string" },
-        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+        "annotations": {
+          "description": "Annotations added to the ServiceAccount.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "create": {
+          "description": "Create a ServiceAccount for the manager.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "ServiceAccount name. Defaults to the full release name when empty.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sweepInterval": {
+      "description": "How often orphaned rules are pruned from a node.",
+      "type": "string",
+      "pattern": "^([0-9]*[1-9][0-9]*(\\.[0-9]+)?|0*\\.[0-9]*[1-9][0-9]*)(ns|us|µs|ms|s|m|h)$"
+    },
+    "terminationGracePeriodSeconds": {
+      "description": "Time given to an in-flight ufw command before the pod is terminated.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "tolerations": {
+      "description": "Tolerations for the DaemonSet pods. The default runs on every node, including control planes.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "operator": {
+            "type": "string"
+          }
+        }
       }
     },
-    "rbac": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "create": { "type": "boolean" }
-      }
+    "ufwPath": {
+      "description": "Path of the ufw binary inside the host root.",
+      "type": "string",
+      "pattern": "^/"
     },
-    "commonLabels": { "type": "object", "additionalProperties": { "type": "string" } },
-    "rules": {
-      "description": "HostFirewallRule resources keyed by name; each value is the rule spec.",
+    "updateStrategy": {
+      "description": "DaemonSet rollout strategy.",
       "type": "object",
-      "additionalProperties": { "type": "object" }
+      "properties": {
+        "rollingUpdate": {
+          "description": "Rolling update settings.",
+          "type": "object",
+          "properties": {
+            "maxUnavailable": {
+              "description": "Maximum number of pods unavailable during a rollout.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "type": {
+          "description": "Update strategy type.",
+          "type": "string",
+          "enum": [
+            "RollingUpdate",
+            "OnDelete"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "rules.schema.yaml": {
+      "type": "object",
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "description": "ufw action.",
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "reject",
+            "limit"
+          ]
+        },
+        "comment": {
+          "description": "Optional human readable note appended after the ownership marker. ufw's comment parser does not accept a single quote or a line break.",
+          "type": "string",
+          "pattern": "^[^'\\r\\n]*$",
+          "maxLength": 200
+        },
+        "direction": {
+          "description": "Traffic direction.",
+          "default": "in",
+          "type": "string",
+          "enum": [
+            "in",
+            "out"
+          ]
+        },
+        "from": {
+          "description": "Source of the traffic. When omitted, ufw's \"any\" is used.",
+          "type": "object",
+          "properties": {
+            "cidr": {
+              "description": "IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.",
+              "type": "string"
+            },
+            "host": {
+              "description": "Fully qualified domain name resolved on every node.",
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\\.?$",
+              "maxLength": 253
+            },
+            "port": {
+              "description": "Port or port range on this side of the rule.",
+              "type": "string",
+              "pattern": "^[0-9]{1,5}(:[0-9]{1,5})?$",
+              "maxLength": 11
+            }
+          },
+          "additionalProperties": false
+        },
+        "interface": {
+          "description": "Network interface the rule is limited to.",
+          "type": "string",
+          "maxLength": 15
+        },
+        "log": {
+          "description": "Enable per-rule logging.",
+          "default": false,
+          "type": "boolean"
+        },
+        "nodeSelector": {
+          "description": "Nodes the rule applies to. An empty selector applies it to every node.",
+          "type": "object",
+          "properties": {
+            "matchExpressions": {
+              "description": "List of label selector requirements. The requirements are ANDed.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "key",
+                  "operator"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "operator": {
+                    "type": "string",
+                    "enum": [
+                      "In",
+                      "NotIn",
+                      "Exists",
+                      "DoesNotExist"
+                    ]
+                  },
+                  "values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "matchLabels": {
+              "description": "Map of label key/value pairs the node must match.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "prepend": {
+          "description": "Place the rule before all existing rules of the same IP family instead of appending it.",
+          "default": false,
+          "type": "boolean"
+        },
+        "protocol": {
+          "description": "Layer 4 protocol. \"any\" lets ufw handle both tcp and udp.",
+          "default": "any",
+          "type": "string",
+          "enum": [
+            "tcp",
+            "udp",
+            "any"
+          ]
+        },
+        "resolve": {
+          "description": "Hostname resolution settings.",
+          "type": "object",
+          "properties": {
+            "ipFamilies": {
+              "description": "Resolved families that become rules.",
+              "default": [
+                "IPv4",
+                "IPv6"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "IPv4",
+                  "IPv6"
+                ]
+              }
+            },
+            "maxAddresses": {
+              "description": "Maximum number of addresses used per hostname.",
+              "default": 16,
+              "type": "integer",
+              "maximum": 64,
+              "minimum": 1
+            },
+            "refreshInterval": {
+              "description": "How often hostnames are resolved again. Values below 30s are clamped. Defaults to the operator's defaultRefreshInterval.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "to": {
+          "description": "Destination of the traffic. When omitted, ufw's \"any\" is used.",
+          "type": "object",
+          "properties": {
+            "cidr": {
+              "description": "IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.",
+              "type": "string"
+            },
+            "host": {
+              "description": "Fully qualified domain name resolved on every node.",
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\\.?$",
+              "maxLength": 253
+            },
+            "port": {
+              "description": "Port or port range on this side of the rule.",
+              "type": "string",
+              "pattern": "^[0-9]{1,5}(:[0-9]{1,5})?$",
+              "maxLength": 11
+            },
+            "ports": {
+              "description": "Destination ports. Ranges use the start:end form. ufw accepts at most 15 entries, counting a range as two.",
+              "type": "array",
+              "maxItems": 15,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9]{1,5}(:[0-9]{1,5})?$",
+                "maxLength": 11
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

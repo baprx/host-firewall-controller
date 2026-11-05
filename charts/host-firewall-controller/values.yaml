@@ -3,14 +3,19 @@
 # The chart installs one privileged DaemonSet pod per node. Each pod manages the
 # UFW rules of its own node only.
 
+# @schema additionalProperties: false
+# -- Container image settings.
 image:
+  # @schema minLength: 1
   # -- Container image repository.
   repository: ghcr.io/baprx/host-firewall-controller
   # -- Container image tag. Defaults to .Chart.AppVersion when empty.
   tag: ""
+  # @schema enum: [Always, IfNotPresent, Never]
   # -- Container image pull policy.
   pullPolicy: IfNotPresent
 
+# @schema item: object
 # -- Secrets used to pull the image from a private registry.
 imagePullSecrets: []
 
@@ -19,10 +24,12 @@ nameOverride: ""
 # -- Override the full release name used in resource names.
 fullnameOverride: ""
 
+# @schema additionalProperties: {type: string}
 # -- Nodes that receive the DaemonSet pods. Linux is required.
 nodeSelector:
   kubernetes.io/os: linux
 
+# @schema item: object
 # -- Tolerations for the DaemonSet pods. The default runs on every node,
 # including control planes.
 tolerations:
@@ -31,28 +38,36 @@ tolerations:
 # -- Priority class of the DaemonSet pods.
 priorityClassName: system-node-critical
 
+# @schema pattern: ^/
 # -- Path where the host root filesystem is mounted inside the pod.
 hostRoot: /host
 
+# @schema pattern: ^/
 # -- Path of the ufw binary inside the host root.
 ufwPath: /usr/sbin/ufw
 
+# @schema pattern: ^([0-9]*[1-9][0-9]*(\.[0-9]+)?|0*\.[0-9]*[1-9][0-9]*)(ns|us|µs|ms|s|m|h)$
 # -- How often orphaned rules are pruned from a node.
 sweepInterval: 5m
 
+# @schema pattern: ^[0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h)$
 # -- Hostname refresh interval for rules that do not set
 # spec.resolve.refreshInterval.
 defaultRefreshInterval: 5m
 
+# @schema pattern: ^[0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h)$
 # -- Floor applied to per-rule refresh intervals.
 minRefreshInterval: 30s
 
+# @schema minimum: 1
 # -- Stop converging on a node that would exceed this many managed rules.
 maxRulesPerNode: 256
 
+# @schema minimum: 1
 # -- Maximum number of concrete rules one HostFirewallRule may expand to.
 maxRulesPerCR: 64
 
+# @schema minimum: 1; maximum: 64
 # -- Maximum number of addresses used per hostname by default.
 maxAddresses: 16
 
@@ -63,26 +78,33 @@ dryRun: false
 # -- Keep the pod running when ufw is missing or older than 0.36.
 allowMissingUFW: false
 
+# @schema item: string
 # -- Extra raw flags appended to the manager.
 extraArgs: []
 
 # -- Host-wide ufw lock file. Defaults to <hostRoot>/run/host-firewall-controller.lock.
 lockPath: ""
 
+# @schema additionalProperties: {type: string}
 # -- Annotations added to the DaemonSet pods.
 podAnnotations: {}
+# @schema additionalProperties: {type: string}
 # -- Labels added to the DaemonSet pods.
 podLabels: {}
 
+# @schema additionalProperties: false
 # -- DaemonSet rollout strategy.
 updateStrategy:
+  # @schema enum: [RollingUpdate, OnDelete]
   # -- Update strategy type.
   type: RollingUpdate
   # -- Rolling update settings.
   rollingUpdate:
+    # @schema minimum: 0
     # -- Maximum number of pods unavailable during a rollout.
     maxUnavailable: 1
 
+# @schema minimum: 0
 # -- Time given to an in-flight ufw command before the pod is terminated.
 terminationGracePeriodSeconds: 60
 
@@ -103,26 +125,35 @@ securityContext:
   # -- Keep the container filesystem writable.
   readOnlyRootFilesystem: false
 
+# @schema additionalProperties: false
+# -- Health probe server settings.
 healthProbe:
   # -- Address the health probe server binds to.
   bindAddress: ":8081"
+  # @schema minimum: 1; maximum: 65535
   # -- Container port used by the probes.
   port: 8081
 
+# @schema additionalProperties: false
+# -- Prometheus metrics settings.
 metrics:
   # -- Expose Prometheus metrics.
   enabled: true
   # -- Address the metrics server binds to.
   bindAddress: ":8080"
+  # @schema minimum: 1; maximum: 65535
   # -- Container and Service port for metrics.
   port: 8080
 
+  # @schema additionalProperties: false
   service:
     # -- Create a Service for the metrics endpoint.
     enabled: true
+    # @schema enum: [ClusterIP, NodePort, LoadBalancer]
     # -- Service type.
     type: ClusterIP
 
+  # @schema additionalProperties: false
   serviceMonitor:
     # -- Create a ServiceMonitor for the metrics Service.
     enabled: false
@@ -130,29 +161,40 @@ metrics:
     interval: 30s
     # -- Scrape timeout.
     scrapeTimeout: 10s
+    # @schema additionalProperties: {type: string}
     # -- Extra labels for the ServiceMonitor.
     labels: {}
 
+# @schema additionalProperties: false
+# -- ServiceAccount settings.
 serviceAccount:
   # -- Create a ServiceAccount for the manager.
   create: true
   # -- ServiceAccount name. Defaults to the full release name when empty.
   name: ""
+  # @schema additionalProperties: {type: string}
   # -- Annotations added to the ServiceAccount.
   annotations: {}
 
+# @schema additionalProperties: false
+# -- RBAC settings.
 rbac:
   # -- Create the ClusterRole and ClusterRoleBinding.
   create: true
 
+# @schema additionalProperties: {type: string}
 # -- Labels added to every resource.
 commonLabels: {}
 
+# The rule shape lives in rules.schema.yaml and is referenced below, so the
+# generated values.schema.json validates rule fields. It mirrors the
+# openAPIV3Schema of crds/security.baprx.github.io_hostfirewallrules.yaml; keep
+# both in sync when the CRD changes.
 # -- HostFirewallRule resources keyed by their name. Each value is the rule
 # spec, passed through to the CRD verbatim, so any field the operator supports
 # can be set here. A rule applies to every node unless its spec sets
 # nodeSelector. Nothing is applied to a host while dryRun is true.
-rules: {}
+rules: {} # @schema additionalProperties: {$ref: ./rules.schema.yaml}
 # Example, mirroring config/samples/security_v1alpha1_hostfirewallrule.yaml:
 # rules:
 #   allow-ssh-office:
