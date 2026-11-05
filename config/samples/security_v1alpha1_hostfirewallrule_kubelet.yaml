@@ -5,7 +5,6 @@ metadata:
     app.kubernetes.io/name: host-firewall-controller
     app.kubernetes.io/managed-by: kustomize
   name: allow-kubelet
-  namespace: default
 spec:
   action: allow
   protocol: tcp

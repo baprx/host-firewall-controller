@@ -29,8 +29,8 @@ const (
 
 	// fingerprintLen is the number of hex characters of the rule fingerprint.
 	fingerprintLen = 12
-	// maxTokenLen bounds the "<namespace>/<name>" part so a marker always fits
-	// comfortably in a ufw comment.
+	// maxTokenLen bounds the "<name>" part so a marker always fits comfortably
+	// in a ufw comment.
 	maxTokenLen = 100
 	// MaxCommentLen is the maximum ufw comment length the operator emits. ufw
 	// itself does not document a limit; keeping a tenth of a kilobyte of slack
@@ -48,10 +48,10 @@ type Marker struct {
 }
 
 // TokenFor derives the stable token for a HostFirewallRule from its identity.
-// When "<namespace>/<name>" is too long it is truncated and disambiguated with a
-// hash of the UID, so two long-named CRs can never share a token.
-func TokenFor(namespace, name, uid string) string {
-	token := namespace + "/" + name
+// When the name is too long it is truncated and disambiguated with a hash of the
+// UID, so two long-named CRs can never share a token.
+func TokenFor(name, uid string) string {
+	token := name
 	if len(token) <= maxTokenLen {
 		return token
 	}

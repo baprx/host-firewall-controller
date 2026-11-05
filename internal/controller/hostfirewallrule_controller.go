@@ -79,7 +79,7 @@ type HostFirewallRuleReconciler struct {
 
 // Reconcile converges the ufw rules of one HostFirewallRule on this node.
 func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithValues("node", r.NodeName, "rule", req.NamespacedName)
+	log := logf.FromContext(ctx).WithValues("node", r.NodeName, "rule", req.Name)
 
 	var cr securityv1alpha1.HostFirewallRule
 	if err := r.Get(ctx, req.NamespacedName, &cr); err != nil {
@@ -110,7 +110,7 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, selectorErr
 	}
 
-	token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
+	token := ufw.TokenFor(cr.Name, string(cr.UID))
 
 	exp := expansion{}
 	if !matches {
@@ -180,7 +180,7 @@ func (r *HostFirewallRuleReconciler) nodeRuleCount(
 ) (int, error) {
 	markers := map[string]struct{}{}
 	add := func(cr *securityv1alpha1.HostFirewallRule, rules []ufw.Rule) {
-		token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
+		token := ufw.TokenFor(cr.Name, string(cr.UID))
 		for _, rule := range rules {
 			markers[ufw.MarkerFor(token, rule).String()] = struct{}{}
 		}
@@ -232,8 +232,7 @@ func (r *HostFirewallRuleReconciler) mapNodeToRules(ctx context.Context, object 
 	requests := make([]reconcile.Request, 0, len(list.Items))
 	for _, item := range list.Items {
 		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-			Namespace: item.Namespace,
-			Name:      item.Name,
+			Name: item.Name,
 		}})
 	}
 	return requests

@@ -11,7 +11,7 @@ repo: github.com/baprx/host-firewall-controller
 resources:
 - api:
     crdVersion: v1
-    namespaced: true
+    namespaced: false
   controller: true
   domain: baprx.github.io
   group: security

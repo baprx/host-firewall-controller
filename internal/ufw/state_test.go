@@ -25,11 +25,11 @@ const activeStatus = `Status: active
 
 To                         Action      From
 --                         ------      ----
-[ 1] 22/tcp                     ALLOW IN    Anywhere                   # HFC:infra/allow-ssh:0123456789ab
-[ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # HFC:infra/allow-ssh:0123456789ab
+[ 1] 22/tcp                     ALLOW IN    Anywhere                   # HFC:allow-ssh:0123456789ab
+[ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # HFC:allow-ssh:0123456789ab
 [ 3] 80/tcp                     ALLOW IN    Anywhere
-[ 4] Anywhere on eth0           ALLOW       192.168.0.0/16             # HFC:infra/web:abcdef012345
-[ 5] 10.0.0.0/8                ALLOW OUT   Anywhere on eth1           # HFC:infra/out:111111111111 | office range
+[ 4] Anywhere on eth0           ALLOW       192.168.0.0/16             # HFC:web:abcdef012345
+[ 5] 10.0.0.0/8                ALLOW OUT   Anywhere on eth1           # HFC:out:111111111111 | office range
 `
 
 func TestParseStatusNumberedHasNoCommandArgs(t *testing.T) {
@@ -56,7 +56,7 @@ func TestParseStatusNumbered(t *testing.T) {
 		t.Fatalf("got %d entries, want 4", len(state.Entries))
 	}
 
-	ssh := state.Find("HFC:infra/allow-ssh:0123456789ab")
+	ssh := state.Find("HFC:allow-ssh:0123456789ab")
 	if len(ssh) != 2 {
 		t.Fatalf("dual-stack twins not both found: %#v", ssh)
 	}
@@ -69,11 +69,11 @@ func TestParseStatusNumbered(t *testing.T) {
 	if !state.HasV6() {
 		t.Fatal("HasV6() = false, want true")
 	}
-	if got := state.Count("HFC:infra/allow-ssh:0123456789ab"); got != 2 {
+	if got := state.Count("HFC:allow-ssh:0123456789ab"); got != 2 {
 		t.Fatalf("Count() = %d, want 2", got)
 	}
 
-	if state.Has("HFC:infra/absent:0123456789ab") {
+	if state.Has("HFC:absent:0123456789ab") {
 		t.Fatal("absent marker reported as present")
 	}
 
@@ -85,8 +85,8 @@ func TestParseStatusNumbered(t *testing.T) {
 	}
 
 	// A user comment containing the separator still parses back to the marker.
-	out, ok := ParseMarker("HFC:infra/out:111111111111 | office range")
-	if !ok || out.Token != "infra/out" {
+	out, ok := ParseMarker("HFC:out:111111111111 | office range")
+	if !ok || out.Token != "out" {
 		t.Fatalf("marker with user comment = %#v, %v", out, ok)
 	}
 }
@@ -104,10 +104,10 @@ func TestParseStatusNumberedInactive(t *testing.T) {
 }
 
 const showAdded = `Added user rules (see 'ufw status' for running firewall):
-ufw allow proto tcp from 10.0.0.0/8 comment 'HFC:infra/allow-ssh:0123456789ab'
-ufw limit 22/tcp comment 'HFC:infra/ssh:aaaaaaaaaaaa | rate limited'
+ufw allow proto tcp from 10.0.0.0/8 comment 'HFC:allow-ssh:0123456789ab'
+ufw limit 22/tcp comment 'HFC:ssh:aaaaaaaaaaaa | rate limited'
 ufw allow 3333
-ufw route allow in on eth0 out on eth1 comment 'HFC:infra/route:bbbbbbbbbbbb'
+ufw route allow in on eth0 out on eth1 comment 'HFC:route:bbbbbbbbbbbb'
 `
 
 func TestParseShowAdded(t *testing.T) {
@@ -126,7 +126,7 @@ func TestParseShowAdded(t *testing.T) {
 	if first.Number != 0 {
 		t.Fatalf("show added entries must not have a number, got %d", first.Number)
 	}
-	if first.Marker.Token != "infra/allow-ssh" {
+	if first.Marker.Token != "allow-ssh" {
 		t.Fatalf("unexpected marker %#v", first.Marker)
 	}
 

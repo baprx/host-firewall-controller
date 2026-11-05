@@ -64,7 +64,7 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 	ruleCount := 0
 	for i := range list.Items {
 		cr := &list.Items[i]
-		key := types.NamespacedName{Namespace: cr.Namespace, Name: cr.Name}
+		key := types.NamespacedName{Name: cr.Name}
 
 		var current securityv1alpha1.HostFirewallRule
 		if err := r.Get(ctx, key, &current); err != nil {
@@ -83,7 +83,7 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 		exp := r.expand(ctx, &current, prev)
 		targets = append(targets, sweepTarget{
 			cr:       current,
-			token:    ufw.TokenFor(current.Namespace, current.Name, string(current.UID)),
+			token:    ufw.TokenFor(current.Name, string(current.UID)),
 			rules:    exp.Rules,
 			exp:      exp,
 			prev:     prev,
@@ -118,8 +118,8 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 			status.LastAppliedTime = target.prev.LastAppliedTime
 		}
 		if err := r.patchStatus(ctx, &target.cr, status); err != nil && !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("patch status for rule %s/%s: %w",
-				target.cr.Namespace, target.cr.Name, err))
+			errs = append(errs, fmt.Errorf("patch status for rule %s: %w",
+				target.cr.Name, err))
 		}
 	}
 
@@ -212,7 +212,7 @@ func (r *HostFirewallRuleReconciler) expectedRules(
 		prev := cr.Status.Nodes[r.NodeName]
 		exp := r.expand(ctx, cr, prev)
 
-		token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
+		token := ufw.TokenFor(cr.Name, string(cr.UID))
 		for _, rule := range exp.Rules {
 			expected[ufw.MarkerFor(token, rule).String()] = rule
 			count++

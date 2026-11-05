@@ -94,7 +94,7 @@ func (r *HostFirewallRuleReconciler) expand(
 	cr *securityv1alpha1.HostFirewallRule,
 	prev securityv1alpha1.NodeStatus,
 ) expansion {
-	token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
+	token := ufw.TokenFor(cr.Name, string(cr.UID))
 	interval := r.refreshInterval(cr)
 	maxAddresses := r.maxAddressesFor(cr)
 	families := r.familiesFor(cr)

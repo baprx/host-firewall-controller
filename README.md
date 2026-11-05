@@ -64,7 +64,6 @@ apiVersion: security.baprx.github.io/v1alpha1
 kind: HostFirewallRule
 metadata:
   name: allow-ssh-office
-  namespace: default
 spec:
   action: allow
   protocol: tcp
@@ -85,13 +84,13 @@ On the node:
 
 ```bash
 ufw status numbered | grep HFC:
-# [ 1] 22/tcp  ALLOW IN  203.0.113.0/24  # HFC:default/allow-ssh-office:1a2b3c4d5e6f | SSH from the office
+# [ 1] 22/tcp  ALLOW IN  203.0.113.0/24  # HFC:allow-ssh-office:1a2b3c4d5e6f | SSH from the office
 ```
 
 ## API
 
-`HostFirewallRule` is `security.baprx.github.io/v1alpha1`, namespaced, short name
-`hfr`.
+`HostFirewallRule` is `security.baprx.github.io/v1alpha1`, cluster-scoped, short
+name `hfr`.
 
 | Field | Description |
 | --- | --- |
@@ -120,7 +119,7 @@ status:
       ufwVersion: "ufw 0.36.2"
       ufwEnabled: true
       markers:
-        - HFC:default/allow-ssh-office:1a2b3c4d5e6f
+        - HFC:allow-ssh-office:1a2b3c4d5e6f
       resolved:
         from: ["203.0.113.10", "203.0.113.11"]
       lastAppliedTime: "2026-11-02T15:04:05Z"
@@ -154,13 +153,13 @@ with the node's resolver. Resolution happens at most every
 Every rule the operator creates ends with a ufw comment:
 
 ```
-HFC:<namespace>/<name>:<fingerprint> | <optional user comment>
+HFC:<name>:<fingerprint> | <optional user comment>
 ```
 
-`HFC:` identifies the operator, `<namespace>/<name>` identifies the
-`HostFirewallRule`, and the 12-hex fingerprint covers every semantic field of
-the rule. The comment is never truncated; the user part is truncated to keep the
-whole comment within 200 bytes.
+`HFC:` identifies the operator, `<name>` identifies the `HostFirewallRule`, and
+the 12-hex fingerprint covers every semantic field of the rule. The comment is
+never truncated; the user part is truncated to keep the whole comment within 200
+bytes.
 
 Reconciliation only adopts rules whose comment parses as one of its markers.
 Anything else, including a rule with identical ports but no comment, is left
@@ -189,9 +188,9 @@ Useful metrics:
 
 ## Removing the operator
 
-There are no finalizers. Deleting a `HostFirewallRule` or a namespace removes its
-rules on the next reconcile; the periodic node sweep (default 5 minutes) also
-removes rules whose CR no longer exists, and repairs drift.
+There are no finalizers. Deleting a `HostFirewallRule` removes its rules on the
+next reconcile; the periodic node sweep (default 5 minutes) also removes rules
+whose CR no longer exists, and repairs drift.
 
 Uninstalling the chart removes the pods but deliberately leaves ufw rules on the
 nodes, because the operator will not run destructive ufw commands blindly.

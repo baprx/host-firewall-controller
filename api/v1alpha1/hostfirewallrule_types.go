@@ -245,7 +245,7 @@ type HostFirewallRuleStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=hfr,scope=Namespaced
+// +kubebuilder:resource:shortName=hfr,scope=Cluster
 // +kubebuilder:printcolumn:name="Action",type=string,JSONPath=`.spec.action`
 // +kubebuilder:printcolumn:name="Direction",type=string,JSONPath=`.spec.direction`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

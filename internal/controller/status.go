@@ -40,7 +40,7 @@ func (r *HostFirewallRuleReconciler) statusFor(
 	matches bool,
 ) securityv1alpha1.NodeStatus {
 	now := metav1.Time{Time: time.Now()}
-	token := ufw.TokenFor(cr.Namespace, cr.Name, string(cr.UID))
+	token := ufw.TokenFor(cr.Name, string(cr.UID))
 
 	status := securityv1alpha1.NodeStatus{
 		Generation:      cr.Generation,
@@ -112,8 +112,7 @@ func (r *HostFirewallRuleReconciler) patchStatus(
 			Kind:       "HostFirewallRule",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: cr.Namespace,
-			Name:      cr.Name,
+			Name: cr.Name,
 		},
 		Status: securityv1alpha1.HostFirewallRuleStatus{
 			Nodes: map[string]securityv1alpha1.NodeStatus{r.NodeName: status},

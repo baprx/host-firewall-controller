@@ -24,18 +24,18 @@ import (
 func TestTokenFor(t *testing.T) {
 	t.Parallel()
 
-	if got := TokenFor("infra", "allow-ssh", "uid"); got != "infra/allow-ssh" {
+	if got := TokenFor("allow-ssh", "uid"); got != "allow-ssh" {
 		t.Fatalf("TokenFor() = %q", got)
 	}
 
 	long := strings.Repeat("a", 200)
-	first := TokenFor("infra", long, "uid-1")
-	second := TokenFor("infra", long, "uid-2")
+	first := TokenFor(long, "uid-1")
+	second := TokenFor(long, "uid-2")
 
 	if len(first) > maxTokenLen {
 		t.Fatalf("token too long: %d", len(first))
 	}
-	if first != TokenFor("infra", long, "uid-1") {
+	if first != TokenFor(long, "uid-1") {
 		t.Fatal("token is not deterministic")
 	}
 	if first == second {
@@ -50,10 +50,10 @@ func TestMarkerRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	rule := Rule{Action: ActionAllow, Protocol: ProtocolTCP, ToPorts: []string{"22"}}
-	marker := MarkerFor("infra/allow-ssh", rule)
+	marker := MarkerFor("allow-ssh", rule)
 	rendered := marker.String()
 
-	if !strings.HasPrefix(rendered, "HFC:infra/allow-ssh:") {
+	if !strings.HasPrefix(rendered, "HFC:allow-ssh:") {
 		t.Fatalf("unexpected marker rendering %q", rendered)
 	}
 
@@ -65,7 +65,7 @@ func TestMarkerRoundTrip(t *testing.T) {
 	if _, ok := ParseMarker("allow ssh"); ok {
 		t.Fatal("unmanaged comment must not parse as a marker")
 	}
-	if _, ok := ParseMarker("HFC:infra/a:nothex"); ok {
+	if _, ok := ParseMarker("HFC:a:nothex"); ok {
 		t.Fatal("non-hex fingerprint must not parse")
 	}
 }
@@ -73,7 +73,7 @@ func TestMarkerRoundTrip(t *testing.T) {
 func TestMarkerWithUserComment(t *testing.T) {
 	t.Parallel()
 
-	marker := MarkerFor("infra/a", Rule{Action: ActionAllow, ToPorts: []string{"80"}})
+	marker := MarkerFor("a", Rule{Action: ActionAllow, ToPorts: []string{"80"}})
 	comment := ComposeComment(marker, "public web")
 
 	parsed, ok := ParseMarker(comment)
@@ -88,7 +88,7 @@ func TestMarkerWithUserComment(t *testing.T) {
 func TestComposeCommentTruncates(t *testing.T) {
 	t.Parallel()
 
-	marker := MarkerFor("infra/a", Rule{Action: ActionAllow})
+	marker := MarkerFor("a", Rule{Action: ActionAllow})
 	comment := ComposeComment(marker, strings.Repeat("é", 300))
 
 	if len(comment) > MaxCommentLen {

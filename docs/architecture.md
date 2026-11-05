@@ -2,7 +2,7 @@
 
 ## Goals
 
-- Manage UFW rules on every node from namespaced `HostFirewallRule` CRs.
+- Manage UFW rules on every node from cluster-scoped `HostFirewallRule` CRs.
 - Make ownership obvious to a human running `ufw status numbered`.
 - Never touch rules the operator did not create.
 - Never change global UFW state.
@@ -24,7 +24,7 @@
 ```
                        Kubernetes API
         +-------------------------------------------+
-        | HostFirewallRule (namespaced)             |
+        | HostFirewallRule (cluster-scoped)         |
         | Node (labels)                             |
         +---------------------+---------------------+
                               |
@@ -135,9 +135,9 @@ The per-node sweep is the garbage collector and the drift repair mechanism. It:
    markers beyond the expected number of IP families. v4/v6 twins are kept.
 
 It runs at startup, every `--sweep-interval` (default 5 minutes), and whenever a
-CR is deleted. This is why there are no finalizers: a CR, a namespace, or an
-entire cluster can disappear without leaving reconciliation blocked, and the
-next sweep still cleans up.
+CR is deleted. This is why there are no finalizers: a CR, or an entire cluster,
+can disappear without leaving reconciliation blocked, and the next sweep still
+cleans up.
 
 ## Status
 

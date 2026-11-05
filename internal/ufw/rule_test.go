@@ -161,8 +161,8 @@ func TestCommand(t *testing.T) {
 		},
 		{
 			name: "comment is appended",
-			rule: Rule{Action: ActionAllow, ToPorts: []string{"22"}, Comment: "HFC:ns/name:0123456789ab"},
-			want: "allow 22 comment 'HFC:ns/name:0123456789ab'",
+			rule: Rule{Action: ActionAllow, ToPorts: []string{"22"}, Comment: "HFC:name:0123456789ab"},
+			want: "allow 22 comment 'HFC:name:0123456789ab'",
 		},
 	}
 
@@ -213,7 +213,7 @@ func TestMatchKey(t *testing.T) {
 func TestMatchKeyForArgs(t *testing.T) {
 	t.Parallel()
 
-	first, err := SplitArgs("allow 22/tcp comment 'HFC:ns/name:0123456789ab'")
+	first, err := SplitArgs("allow 22/tcp comment 'HFC:name:0123456789ab'")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestFingerprint(t *testing.T) {
 	}
 
 	commentOnly := base
-	commentOnly.Comment = "HFC:x/y:0123456789ab | hello"
+	commentOnly.Comment = "HFC:y:0123456789ab | hello"
 	if base.Fingerprint() != commentOnly.Fingerprint() {
 		t.Fatal("fingerprint must not depend on the comment")
 	}

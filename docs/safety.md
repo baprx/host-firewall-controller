@@ -42,7 +42,7 @@ HFC:<token>:<fingerprint>[ | <user comment>]
 ```
 
 - `HFC:` is the operator prefix.
-- The token is `<namespace>/<name>`; if longer than 100 characters it is
+- The token is `<name>`; if longer than 100 characters it is
   truncated and suffixed with `~<uid hash>` so two long-named CRs cannot collide.
 - The fingerprint is 12 hex characters of SHA-256 over every semantic field of
   the rule (action, direction, protocol, interface, log, prepend, addresses,

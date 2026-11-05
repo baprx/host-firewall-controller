@@ -20,7 +20,6 @@ apiVersion: security.baprx.github.io/v1alpha1
 kind: HostFirewallRule
 metadata:
   name: {{ $name }}
-  namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "hfc.labels" $ | nindent 4 }}
 spec:

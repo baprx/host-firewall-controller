@@ -5,7 +5,6 @@ metadata:
     app.kubernetes.io/name: host-firewall-controller
     app.kubernetes.io/managed-by: kustomize
   name: limit-ssh-ingress
-  namespace: default
 spec:
   action: limit
   protocol: tcp

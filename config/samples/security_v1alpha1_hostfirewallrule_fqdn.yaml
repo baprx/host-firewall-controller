@@ -5,7 +5,6 @@ metadata:
     app.kubernetes.io/name: host-firewall-controller
     app.kubernetes.io/managed-by: kustomize
   name: allow-egress-api
-  namespace: default
 spec:
   action: allow
   direction: out

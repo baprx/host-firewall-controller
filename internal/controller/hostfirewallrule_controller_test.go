@@ -43,8 +43,7 @@ import (
 )
 
 const (
-	testNamespace = "default"
-	testRoleKey   = "role"
+	testRoleKey = "role"
 )
 
 // fakeRule is one rule stored by fakeHost, in the v4 or v6 rule list.
@@ -493,7 +492,7 @@ func newNode(name string, labels map[string]string) {
 
 func createRule(name string, spec securityv1alpha1.HostFirewallRuleSpec) {
 	rule := &securityv1alpha1.HostFirewallRule{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec:       spec,
 	}
 	Expect(k8sClient.Create(ctx, rule)).To(Succeed())
@@ -502,13 +501,13 @@ func createRule(name string, spec securityv1alpha1.HostFirewallRuleSpec) {
 
 func fetchRule(name string) *securityv1alpha1.HostFirewallRule {
 	rule := &securityv1alpha1.HostFirewallRule{}
-	Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: name}, rule)).To(Succeed())
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, rule)).To(Succeed())
 	return rule
 }
 
 func reconcileOnce(reconciler *HostFirewallRuleReconciler, name string) (reconcile.Result, error) {
 	return reconciler.Reconcile(ctx, reconcile.Request{
-		NamespacedName: types.NamespacedName{Namespace: testNamespace, Name: name},
+		NamespacedName: types.NamespacedName{Name: name},
 	})
 }
 
@@ -535,7 +534,7 @@ func uniqueRuleName(prefix string) string {
 var _ = Describe("fakeHost", func() {
 	It("round-trips add, status, delete", func() {
 		host := newFakeHost(true)
-		_, err := host.Run(ctx, "allow", "proto", "tcp", "to", "any", "port", "22", "comment", "HFC:default/a:0123456789ab")
+		_, err := host.Run(ctx, "allow", "proto", "tcp", "to", "any", "port", "22", "comment", "HFC:a:0123456789ab")
 		Expect(err).NotTo(HaveOccurred())
 
 		state := ufw.ParseStatusNumbered(mustRender(host, "status", "numbered"))
@@ -553,6 +552,14 @@ func mustRender(host *fakeHost, args ...string) string {
 	Expect(err).NotTo(HaveOccurred())
 	return out
 }
+
+var _ = Describe("HostFirewallRule API", func() {
+	It("is cluster scoped", func() {
+		namespaced, err := k8sClient.IsObjectNamespaced(&securityv1alpha1.HostFirewallRule{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(namespaced).To(BeFalse(), "HostFirewallRule applies to hosts, not namespaces")
+	})
+})
 
 var _ = Describe("HostFirewallRule controller", func() {
 	var (
@@ -576,7 +583,7 @@ var _ = Describe("HostFirewallRule controller", func() {
 
 		rules := host.snapshot()
 		Expect(rules).To(HaveLen(1))
-		Expect(rules[0].rule.Comment).To(HavePrefix("HFC:default/" + name + ":"))
+		Expect(rules[0].rule.Comment).To(HavePrefix("HFC:" + name + ":"))
 
 		rule := fetchRule(name)
 		status := rule.Status.Nodes[nodeName]
@@ -747,7 +754,7 @@ var _ = Describe("HostFirewallRule controller", func() {
 
 		rules := host.snapshot()
 		Expect(rules).To(HaveLen(1))
-		Expect(rules[0].rule.Comment).To(HavePrefix("HFC:default/" + first + ":"))
+		Expect(rules[0].rule.Comment).To(HavePrefix("HFC:" + first + ":"))
 
 		status := fetchRule(second).Status.Nodes[nodeName]
 		Expect(status.Applied).To(BeFalse())
@@ -1011,7 +1018,7 @@ var _ = Describe("HostFirewallRule controller", func() {
 
 		Expect(reconciler.ReconcileSweep(ctx)).To(Succeed())
 		Expect(host.count()).To(Equal(1))
-		Expect(host.snapshot()[0].rule.Comment).To(HavePrefix("HFC:default/" + name + ":"))
+		Expect(host.snapshot()[0].rule.Comment).To(HavePrefix("HFC:" + name + ":"))
 	})
 
 	It("refreshes status after a sweep repairs drift", func() {
@@ -1315,8 +1322,7 @@ var _ = Describe("HostFirewallRule controller", func() {
 		for i, spec := range invalid {
 			rule := &securityv1alpha1.HostFirewallRule{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("invalid-%d-%s", i, rand.String(5)),
-					Namespace: testNamespace,
+					Name: fmt.Sprintf("invalid-%d-%s", i, rand.String(5)),
 				},
 				Spec: spec,
 			}

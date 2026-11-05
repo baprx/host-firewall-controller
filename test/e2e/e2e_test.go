@@ -35,11 +35,10 @@ import (
 )
 
 const (
-	namespace    = "host-firewall-controller-system"
-	releaseName  = "hfc-e2e"
-	daemonSet    = "hfc-e2e"
-	ruleNamespac = "default"
-	ufwBinary    = "/usr/sbin/ufw"
+	namespace   = "host-firewall-controller-system"
+	releaseName = "hfc-e2e"
+	daemonSet   = "hfc-e2e"
+	ufwBinary   = "/usr/sbin/ufw"
 
 	// controllerLockPath is the manager's host lock (--lock-path default for
 	// hostRoot /host). Tests take it to freeze sweeps while observing ufw.
@@ -117,7 +116,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 		Eventually(func(g Gomega) {
 			added := ufwRun("show", "added")
 			g.Expect(added).To(ContainSubstring("2222"))
-			g.Expect(added).To(ContainSubstring("HFC:" + ruleNamespac + "/" + name + ":"))
+			g.Expect(added).To(ContainSubstring("HFC:" + name + ":"))
 			g.Expect(added).To(ContainSubstring("e2e ssh"))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
@@ -153,7 +152,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 			added := ufwRun("show", "added")
 			g.Expect(added).To(ContainSubstring("3334"))
 			g.Expect(added).NotTo(ContainSubstring("3333"))
-			g.Expect(strings.Count(added, "HFC:"+ruleNamespac+"/"+name+":")).To(Equal(1))
+			g.Expect(strings.Count(added, "HFC:"+name+":")).To(Equal(1))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 	})
 
@@ -178,7 +177,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 		added := ufwRun("show", "added")
-		Expect(added).NotTo(ContainSubstring("HFC:" + ruleNamespac + "/" + name + ":"))
+		Expect(added).NotTo(ContainSubstring("HFC:" + name + ":"))
 		Expect(added).To(ContainSubstring(unmanagedPort))
 
 		ufwRun("delete", "allow", "proto", "tcp", "to", "any", "port", unmanagedPort)
@@ -193,7 +192,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
     ports: ["9994"]
 `)
 
-		marker := "HFC:" + ruleNamespac + "/" + name + ":"
+		marker := "HFC:" + name + ":"
 		Eventually(func(g Gomega) {
 			g.Expect(ufwRun("show", "added")).To(ContainSubstring(marker))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
@@ -228,11 +227,11 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 			g.Expect(ufwRun("show", "added")).To(ContainSubstring("2223"))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
-		mustKubectl("delete", "hfr", name, "-n", ruleNamespac)
+		mustKubectl("delete", "hfr", name)
 
 		Eventually(func(g Gomega) {
 			added := ufwRun("show", "added")
-			g.Expect(added).NotTo(ContainSubstring("HFC:" + ruleNamespac + "/" + name + ":"))
+			g.Expect(added).NotTo(ContainSubstring("HFC:" + name + ":"))
 			g.Expect(added).To(ContainSubstring(unmanagedPort))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
@@ -257,7 +256,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 			g.Expect(status["message"]).To(ContainSubstring("does not match"))
 		}, time.Minute, 2*time.Second).Should(Succeed())
 
-		Expect(ufwRun("show", "added")).NotTo(ContainSubstring("HFC:" + ruleNamespac + "/" + name + ":"))
+		Expect(ufwRun("show", "added")).NotTo(ContainSubstring("HFC:" + name + ":"))
 	})
 
 	It("resolves a hostname to an address", func() {
@@ -314,7 +313,7 @@ func ufwRun(args ...string) string {
 
 // nodeStatus returns this node's status entry for a rule.
 func nodeStatus(ruleName, node string) map[string]any {
-	raw := mustKubectl("get", "hfr", ruleName, "-n", ruleNamespac, "-o", "json")
+	raw := mustKubectl("get", "hfr", ruleName, "-o", "json")
 	var object struct {
 		Status struct {
 			Nodes map[string]map[string]any `json:"nodes"`
@@ -324,15 +323,14 @@ func nodeStatus(ruleName, node string) map[string]any {
 	return object.Status.Nodes[node]
 }
 
-// applyRule creates or updates a HostFirewallRule in the default namespace.
+// applyRule creates or updates a cluster-scoped HostFirewallRule.
 func applyRule(name, spec string) {
 	manifest := fmt.Sprintf(`apiVersion: security.baprx.github.io/v1alpha1
 kind: HostFirewallRule
 metadata:
   name: %s
-  namespace: %s
 spec:
-%s`, name, ruleNamespac, spec)
+%s`, name, spec)
 
 	file, err := os.CreateTemp("", "hfc-e2e-*.yaml")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -340,7 +338,7 @@ spec:
 
 	DeferCleanup(func() {
 		_, _ = utils.Run(exec.Command("kubectl", "delete", "hfr", name,
-			"-n", ruleNamespac, "--ignore-not-found"))
+			"--ignore-not-found"))
 		_ = os.Remove(file.Name())
 	})
 
