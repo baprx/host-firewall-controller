@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.3.0...host-firewall-controller-v0.4.0) (2026-11-05)
+
+
+### Features
+
+* **api:** make HostFirewallRule cluster-scoped ([4d2f556](https://github.com/baprx/host-firewall-controller/commit/4d2f556ed7d769fdc256835264dcb8629e98be10))
+
 ## [0.3.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.2.0...host-firewall-controller-v0.3.0) (2026-11-05)
 
 
