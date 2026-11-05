@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.2.0...host-firewall-controller-v0.3.0) (2026-11-05)
+
+
+### Features
+
+* **chart:** render firewall rules from values ([9b66501](https://github.com/baprx/host-firewall-controller/commit/9b665019d97664e226a0c10cd0ecb0b314bfb22a))
+* remove the allow-missing-ufw escape hatch ([3a48077](https://github.com/baprx/host-firewall-controller/commit/3a48077cbefcde5e77d83c3ead11d3d1f8cca3b3))
+
 ## [0.2.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.1.0...host-firewall-controller-v0.2.0) (2026-11-04)
 
 
