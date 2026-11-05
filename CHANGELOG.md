@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/baprx/host-firewall-controller/compare/v0.1.1...v1.0.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the allow-missing-ufw escape hatch
+
+### Features
+
+* remove the allow-missing-ufw escape hatch ([d3a39c5](https://github.com/baprx/host-firewall-controller/commit/d3a39c5624effbc0f335a18fb7689a62862f2556))
+* remove the allow-missing-ufw escape hatch ([3a48077](https://github.com/baprx/host-firewall-controller/commit/3a48077cbefcde5e77d83c3ead11d3d1f8cca3b3))
+
 ## [0.1.1](https://github.com/baprx/host-firewall-controller/compare/v0.1.0...v0.1.1) (2026-11-05)
 
 
