@@ -25,4 +25,3 @@ resources:
 - hostfirewallrule_admin_role.yaml
 - hostfirewallrule_editor_role.yaml
 - hostfirewallrule_viewer_role.yaml
-

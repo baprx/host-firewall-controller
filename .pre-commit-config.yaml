@@ -1,7 +1,52 @@
-# Regenerate values.schema.json from the chart values on every commit.
-# Requires the helm-values-schema-json plugin:
-#   helm plugin install --verify=false https://github.com/losisin/helm-values-schema-json.git
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-yaml
+        args:
+          - --allow-multiple-documents
+        # The chart templates are Go templates, not YAML.
+        exclude: /templates/
+      - id: check-json
+      - id: check-toml
+      - id: check-shebang-scripts-are-executable
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        description: Format Go source code using the official gofmt tool
+        entry: gofmt -w
+        language: system
+        types: [go]
+      - id: govulncheck
+        name: govulncheck
+        description: Scan the Go module for known vulnerabilities
+        entry: govulncheck ./...
+        language: system
+        files: (^|/)go\.mod$|\.go$
+        pass_filenames: false
+
+  - repo: https://github.com/norwoodj/helm-docs
+    rev: v1.14.2
+    hooks:
+      - id: helm-docs
+        args:
+          - --chart-search-root=charts
+          - --output-file=docs/values.md
+          - --template-files=values.md.gotmpl
+        # Upstream only watches README.md.gotmpl; this chart uses values.md.gotmpl.
+        files: ^charts/.*/(Chart\.yaml|values\.yaml|values\.md\.gotmpl)$
+
+  # Regenerate values.schema.json from the chart values on every commit.
+  # Requires the helm-values-schema-json plugin:
+  #   helm plugin install --verify=false --version 2.6.0 https://github.com/losisin/helm-values-schema-json.git
   - repo: https://github.com/losisin/helm-values-schema-json
     rev: v2.6.0
     hooks:
@@ -9,3 +54,9 @@ repos:
         args:
           - --config
           - charts/host-firewall-controller/.schema.yaml
+        files: ^charts/host-firewall-controller/(values\.yaml|rules\.schema\.yaml|\.schema\.yaml)$
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor
