@@ -5,6 +5,11 @@
   "platformAutomerge": false,
   "packageRules": [
     {
+      "description": "Keep the Go toolchain in mise.toml and go.mod in one update",
+      "matchPackageNames": ["golang/go", "go"],
+      "groupName": "go"
+    },
+    {
       "description": "Automerge non-major updates once CI is green",
       "matchUpdateTypes": [
         "minor",

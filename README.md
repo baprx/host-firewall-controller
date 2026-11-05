@@ -213,6 +213,12 @@ make helm-docs     # regenerate charts/.../docs/values.md
 make test-e2e      # kind + real ufw; requires Docker (or podman via KIND_EXPERIMENTAL_PROVIDER)
 ```
 
+The tools those targets and the pre-commit hooks need are pinned in
+`mise.toml`; `mise install` sets them up. Hooks run through `pre-commit`
+(`pre-commit install` once, then `pre-commit run --all-files`). The
+helm-schema hook also needs the helm-values-schema-json plugin; see the
+install command next to it in `.pre-commit-config.yaml`.
+
 The controller tests use envtest and a stateful fake ufw host. The e2e suite
 creates a kind cluster, installs ufw inside every node (without enabling it),
 installs the chart, and asserts on the real `ufw show added` output.
