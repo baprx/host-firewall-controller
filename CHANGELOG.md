@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/baprx/host-firewall-controller/compare/v0.3.0...v0.4.0) (2026-11-06)
+
+
+### Features
+
+* **knock:** add dynamic IP knocks ([#39](https://github.com/baprx/host-firewall-controller/issues/39)) ([b2948b5](https://github.com/baprx/host-firewall-controller/commit/b2948b58d181df8c97925d24567ba75b3323e771))
+
 ## [0.3.0](https://github.com/baprx/host-firewall-controller/compare/v0.2.0...v0.3.0) (2026-11-05)
 
 
