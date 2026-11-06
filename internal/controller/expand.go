@@ -160,8 +160,8 @@ func (r *HostFirewallRuleReconciler) expand(
 	}
 	out.Message = strings.Join(messages, "; ")
 
-	// Only hostname rules need periodic re-resolution.
-	if !hasHostname(cr.Spec.From) && !hasHostname(toEndpoint(cr.Spec.To)) {
+	// Only hostname rules and expiring grants need periodic re-resolution.
+	if !hasHostname(cr.Spec.From) && !hasHostname(toEndpoint(cr.Spec.To)) && !hasDynamicExpiry(cr, time.Now()) {
 		out.RequeueAfter = 0
 	}
 
@@ -170,6 +170,13 @@ func (r *HostFirewallRuleReconciler) expand(
 
 func hasHostname(spec *securityv1alpha1.EndpointSpec) bool {
 	return spec != nil && spec.Host != nil && *spec.Host != ""
+}
+
+// hasDynamicExpiry reports whether the rule has a live grant with an expiry, so
+// expansion must requeue at that time even when no hostname is involved.
+func hasDynamicExpiry(cr *securityv1alpha1.HostFirewallRule, now time.Time) bool {
+	_, _, requeue, ok := dynamicAddress(cr, now)
+	return ok && requeue > 0
 }
 
 func toEndpoint(spec *securityv1alpha1.ToSpec) *securityv1alpha1.EndpointSpec {
@@ -226,6 +233,20 @@ func (r *HostFirewallRuleReconciler) resolveEndpoint(
 ) (addrs []string, degraded bool, message string, requeue time.Duration) {
 	if spec == nil {
 		return []string{""}, false, "", interval
+	}
+	if spec.Dynamic != nil {
+		ambiguous, err := r.dynamicPathAmbiguous(ctx, spec.Dynamic.Path)
+		if err != nil {
+			return nil, true, fmt.Sprintf("Could not verify knock path %q: %v", spec.Dynamic.Path, err), 0
+		}
+		if ambiguous {
+			return nil, true, fmt.Sprintf("Knock path %q is used by multiple HostFirewallRules", spec.Dynamic.Path), 0
+		}
+		address, message, requeue, ok := dynamicAddress(cr, time.Now())
+		if !ok {
+			return nil, false, message, 0
+		}
+		return []string{address}, false, "", requeue
 	}
 	if spec.CIDR != nil && *spec.CIDR != "" {
 		return []string{*spec.CIDR}, false, "", interval

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -117,26 +118,31 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		exp.Message = "Node does not match the rule's nodeSelector"
 	} else {
 		exp = r.expand(ctx, &cr, prev)
+	}
 
-		if r.MaxRulesPerNode > 0 {
-			total, err := r.nodeRuleCount(ctx, &cr, exp.Rules, nodeObject.Labels)
-			if err != nil {
+	// Clear a stale grant for every rule, before the max-rules check can
+	// return early. exp is kept from before the clear so an expired or
+	// mismatched grant still explains the per-node status.
+	clearErr := r.clearStaleDynamicGrant(ctx, &cr)
+
+	if matches && r.MaxRulesPerNode > 0 {
+		total, err := r.nodeRuleCount(ctx, &cr, exp.Rules, nodeObject.Labels)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if total > r.MaxRulesPerNode {
+			status := prev
+			status.Generation = cr.Generation
+			status.Applied = false
+			status.Degraded = true
+			status.UFWVersion = r.UFWVersion
+			status.LastAppliedTime = &metav1.Time{Time: time.Now()}
+			status.Message = fmt.Sprintf("Rules matching this node would need %d rules, above the node maximum of %d",
+				total, r.MaxRulesPerNode)
+			if err := r.patchStatus(ctx, &cr, status); err != nil {
 				return ctrl.Result{}, err
 			}
-			if total > r.MaxRulesPerNode {
-				status := prev
-				status.Generation = cr.Generation
-				status.Applied = false
-				status.Degraded = true
-				status.UFWVersion = r.UFWVersion
-				status.LastAppliedTime = &metav1.Time{Time: time.Now()}
-				status.Message = fmt.Sprintf("Rules matching this node would need %d rules, above the node maximum of %d",
-					total, r.MaxRulesPerNode)
-				if err := r.patchStatus(ctx, &cr, status); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, fmt.Errorf("%s", status.Message)
-			}
+			return ctrl.Result{}, fmt.Errorf("%s", status.Message)
 		}
 	}
 
@@ -149,9 +155,9 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	r.emitEvents(&cr, status, prev, result.Err)
 
-	if result.Err != nil {
+	if err := errors.Join(result.Err, clearErr); err != nil {
 		reconcileErrors.Inc()
-		return ctrl.Result{}, result.Err
+		return ctrl.Result{}, err
 	}
 	if exp.RequeueAfter > 0 {
 		return ctrl.Result{RequeueAfter: exp.RequeueAfter}, nil
@@ -162,7 +168,10 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 // SetupWithManager sets up the controller with the Manager.
 func (r *HostFirewallRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&securityv1alpha1.HostFirewallRule{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&securityv1alpha1.HostFirewallRule{}, builder.WithPredicates(predicate.Or(
+			predicate.GenerationChangedPredicate{},
+			dynamicGrantChanged(),
+		))).
 		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToRules), builder.WithPredicates(nodeLabelsChanged())).
 		Named("hostfirewallrule").
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).

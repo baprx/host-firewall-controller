@@ -201,6 +201,8 @@ chart-check: helm-sync ## Lint and render the Helm chart.
 	"$(HELM)" template "$(HELM_RELEASE)" "$(HELM_CHART)" --namespace "$(HELM_NAMESPACE)" > /dev/null
 	"$(HELM)" template "$(HELM_RELEASE)" "$(HELM_CHART)" --namespace "$(HELM_NAMESPACE)" \
 		--set metrics.enabled=false --set rbac.create=false --set serviceAccount.create=false > /dev/null
+	"$(HELM)" template "$(HELM_RELEASE)" "$(HELM_CHART)" --namespace "$(HELM_NAMESPACE)" \
+		--set knock.enabled=true > /dev/null
 
 .PHONY: helm-deploy
 helm-deploy: helm-sync ## Install or upgrade the chart on the current cluster.

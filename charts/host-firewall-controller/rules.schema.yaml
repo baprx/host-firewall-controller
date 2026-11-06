@@ -31,6 +31,32 @@ properties:
       cidr:
         description: IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.
         type: string
+      dynamic:
+        description: HTTP-triggered endpoint address.
+        type: object
+        additionalProperties: false
+        required: [path]
+        properties:
+          path:
+            type: string
+            maxLength: 256
+            pattern: '^/[A-Za-z0-9._~/-]*$'
+          ttl:
+            type: string
+            pattern: '^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$'
+          tokenSecretRef:
+            type: object
+            additionalProperties: false
+            required: [name, key]
+            properties:
+              name:
+                type: string
+                minLength: 1
+                maxLength: 253
+              key:
+                type: string
+                minLength: 1
+                maxLength: 253
       host:
         description: Fully qualified domain name resolved on every node.
         type: string
@@ -114,6 +140,32 @@ properties:
       cidr:
         description: IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.
         type: string
+      dynamic:
+        description: HTTP-triggered endpoint address.
+        type: object
+        additionalProperties: false
+        required: [path]
+        properties:
+          path:
+            type: string
+            maxLength: 256
+            pattern: '^/[A-Za-z0-9._~/-]*$'
+          ttl:
+            type: string
+            pattern: '^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$'
+          tokenSecretRef:
+            type: object
+            additionalProperties: false
+            required: [name, key]
+            properties:
+              name:
+                type: string
+                minLength: 1
+                maxLength: 253
+              key:
+                type: string
+                minLength: 1
+                maxLength: 253
       host:
         description: Fully qualified domain name resolved on every node.
         type: string

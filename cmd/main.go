@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -40,6 +41,7 @@ import (
 	securityv1alpha1 "github.com/baprx/host-firewall-controller/api/v1alpha1"
 	"github.com/baprx/host-firewall-controller/internal/controller"
 	"github.com/baprx/host-firewall-controller/internal/dnsresolver"
+	"github.com/baprx/host-firewall-controller/internal/knock"
 	"github.com/baprx/host-firewall-controller/internal/ufw"
 	// +kubebuilder:scaffold:imports
 )
@@ -75,6 +77,8 @@ func main() {
 		maxAddresses           int
 		dryRun                 bool
 		lockPath               string
+		knockBindAddress       string
+		knockTrustedProxies    string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
@@ -98,6 +102,10 @@ func main() {
 	flag.BoolVar(&dryRun, "dry-run", false, "Log ufw commands instead of executing them.")
 	flag.StringVar(&lockPath, "lock-path", "",
 		"Lock file path. Defaults to <host-root>/run/host-firewall-controller.lock.")
+	flag.StringVar(&knockBindAddress, "knock-bind-address", "0",
+		"The address the knock endpoint binds to. 0 disables it.")
+	flag.StringVar(&knockTrustedProxies, "knock-trusted-proxies", "",
+		"Comma-separated CIDRs allowed to set X-Forwarded-For.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -155,6 +163,32 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	if knockBindAddress != "" && knockBindAddress != "0" {
+		trusted, err := knock.ParseTrustedProxies(strings.Split(knockTrustedProxies, ","))
+		if err != nil {
+			setupLog.Error(err, "Invalid --knock-trusted-proxies")
+			os.Exit(1)
+		}
+
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			setupLog.Info("POD_NAMESPACE is empty; knocks that require a token will fail closed", "address", knockBindAddress)
+		}
+
+		srv := &knock.Server{
+			Client:         mgr.GetClient(),
+			Reader:         mgr.GetAPIReader(),
+			Namespace:      namespace,
+			BindAddress:    knockBindAddress,
+			TrustedProxies: trusted,
+		}
+		if err := mgr.Add(srv); err != nil {
+			setupLog.Error(err, "Failed to add knock server")
+			os.Exit(1)
+		}
+		setupLog.Info("Starting knock server", "address", knockBindAddress, "trustedProxies", knockTrustedProxies)
+	}
 
 	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		// Run one sweep at startup to prune anything left by a previous pod.

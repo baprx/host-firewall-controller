@@ -82,6 +82,47 @@ spec:
                     description: cidr is an IP address or CIDR block, for example
                       10.0.0.0/8 or 2001:db8::1.
                     type: string
+                  dynamic:
+                    description: dynamic makes this endpoint the target of an HTTP
+                      knock.
+                    properties:
+                      path:
+                        description: |-
+                          path is the exact request path, for example /knock/home. Query strings
+                          and fragments are not part of the rule.
+                        maxLength: 256
+                        pattern: ^/[A-Za-z0-9._~/-]*$
+                        type: string
+                      tokenSecretRef:
+                        description: |-
+                          tokenSecretRef requires a bearer token. The Secret must be in the
+                          operator namespace. When omitted, the path alone authorizes the knock.
+                        properties:
+                          key:
+                            description: key is the key inside the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          name:
+                            description: name is the Secret name.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      ttl:
+                        description: |-
+                          ttl is how long a granted address stays in the rule. When omitted the
+                          grant never expires.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: ttl must be at least 1m
+                          rule: duration(self) >= duration('1m')
+                    required:
+                    - path
+                    type: object
                   host:
                     description: |-
                       host is a fully qualified domain name that the operator resolves on every
@@ -213,6 +254,47 @@ spec:
                     description: cidr is an IP address or CIDR block, for example
                       10.0.0.0/8 or 2001:db8::1.
                     type: string
+                  dynamic:
+                    description: dynamic makes this endpoint the target of an HTTP
+                      knock.
+                    properties:
+                      path:
+                        description: |-
+                          path is the exact request path, for example /knock/home. Query strings
+                          and fragments are not part of the rule.
+                        maxLength: 256
+                        pattern: ^/[A-Za-z0-9._~/-]*$
+                        type: string
+                      tokenSecretRef:
+                        description: |-
+                          tokenSecretRef requires a bearer token. The Secret must be in the
+                          operator namespace. When omitted, the path alone authorizes the knock.
+                        properties:
+                          key:
+                            description: key is the key inside the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          name:
+                            description: name is the Secret name.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      ttl:
+                        description: |-
+                          ttl is how long a granted address stays in the rule. When omitted the
+                          grant never expires.
+                        type: string
+                        x-kubernetes-validations:
+                        - message: ttl must be at least 1m
+                          rule: duration(self) >= duration('1m')
+                    required:
+                    - path
+                    type: object
                   host:
                     description: |-
                       host is a fully qualified domain name that the operator resolves on every
@@ -261,12 +343,15 @@ spec:
             - action
             type: object
             x-kubernetes-validations:
-            - message: from must set exactly one of cidr or host
+            - message: from must set exactly one of cidr, host or dynamic
               rule: '!has(self.from) || ((has(self.from.cidr) ? 1 : 0) + (has(self.from.host)
-                ? 1 : 0) == 1)'
-            - message: to may set at most one of cidr or host
+                ? 1 : 0) + (has(self.from.dynamic) ? 1 : 0) == 1)'
+            - message: to may set at most one of cidr, host or dynamic
               rule: '!has(self.to) || ((has(self.to.cidr) ? 1 : 0) + (has(self.to.host)
-                ? 1 : 0) <= 1)'
+                ? 1 : 0) + (has(self.to.dynamic) ? 1 : 0) <= 1)'
+            - message: at most one of from.dynamic and to.dynamic may be set
+              rule: '!(has(self.from) && has(self.from.dynamic) && has(self.to) &&
+                has(self.to.dynamic))'
             - message: limit rules require at least one destination port
               rule: self.action != 'limit' || (has(self.to) && has(self.to.ports)
                 && size(self.to.ports) > 0)
@@ -282,6 +367,34 @@ spec:
           status:
             description: status defines the observed state of HostFirewallRule
             properties:
+              dynamic:
+                description: dynamic is the cluster-wide grant shared by every node.
+                properties:
+                  address:
+                    description: address is the observed source IP, normalized to
+                      IPv4 or IPv6.
+                    type: string
+                  expiresAt:
+                    description: expiresAt is when the grant stops applying. Absent
+                      means never.
+                    format: date-time
+                    type: string
+                  observedAt:
+                    description: observedAt is when the knock was accepted.
+                    format: date-time
+                    type: string
+                  path:
+                    description: path is the path that produced the grant.
+                    type: string
+                  side:
+                    description: side is "from" or "to".
+                    type: string
+                required:
+                - address
+                - observedAt
+                - path
+                - side
+                type: object
               nodes:
                 additionalProperties:
                   description: |-

@@ -67,6 +67,7 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 			"--set", "image.pullPolicy=IfNotPresent",
 			"--set", "sweepInterval=5s",
 			"--set", "metrics.enabled=false",
+			"--set", "knock.enabled=true",
 		)
 		output, err := utils.Run(install)
 		Expect(err).NotTo(HaveOccurred(), "helm install failed: %s", output)
@@ -283,6 +284,42 @@ var _ = Describe("UFW rules on a kind node", Ordered, func() {
 			status := nodeStatus(name, nodeName)
 			g.Expect(status).NotTo(BeNil())
 			g.Expect(status["applied"]).To(BeTrue())
+		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+	})
+
+	It("applies a dynamic rule after an HTTP knock", func() {
+		name := "e2e-dynamic"
+		path := "/knock/e2e"
+		applyRule(name, fmt.Sprintf(`
+  action: allow
+  protocol: tcp
+  from:
+    dynamic:
+      path: %s
+      ttl: 10m
+  to:
+    ports: ["4444"]
+`, path))
+
+		// Use loopback so ufw's default-deny policy cannot block the knock port.
+		// The server sees 127.0.0.1 as the source and the rule must match it.
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command(containerCLI, "exec", nodeName,
+				"curl", "-fsS", "http://127.0.0.1:8082"+path))
+			g.Expect(err).NotTo(HaveOccurred(), "curl failed: %s", out)
+		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			added := ufwRun("show", "added")
+			g.Expect(added).To(ContainSubstring("HFC:" + name + ":"))
+			g.Expect(added).To(ContainSubstring("4444"))
+			g.Expect(added).To(ContainSubstring("127.0.0.1"))
+		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			address := strings.TrimSpace(mustKubectl("get", "hfr", name,
+				"-o", "jsonpath={.status.dynamic.address}"))
+			g.Expect(address).To(Equal("127.0.0.1"))
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 	})
 
