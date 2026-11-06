@@ -60,6 +60,8 @@ spec:
             - --max-addresses={{ .Values.maxAddresses }}
             - --health-probe-bind-address={{ .Values.healthProbe.bindAddress }}
             - --metrics-bind-address={{ if .Values.metrics.enabled }}{{ .Values.metrics.bindAddress }}{{ else }}0{{ end }}
+            - --knock-bind-address={{ if .Values.knock.enabled }}{{ .Values.knock.bindAddress }}{{ else }}0{{ end }}
+            - --knock-trusted-proxies={{ join "," .Values.knock.trustedProxies }}
             {{- if .Values.dryRun }}
             - --dry-run
             {{- end }}
@@ -74,11 +76,21 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           ports:
             {{- if .Values.metrics.enabled }}
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
               hostPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.knock.enabled }}
+            - name: knock
+              containerPort: {{ .Values.knock.port }}
+              hostPort: {{ .Values.knock.port }}
               protocol: TCP
             {{- end }}
           livenessProbe:

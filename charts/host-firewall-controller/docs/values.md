@@ -2,7 +2,7 @@
 
 Kubernetes operator that manages UFW rules on every node from HostFirewallRule custom resources, without ever touching unmanaged rules or the global UFW state.
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
+![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
 
 ## Requirements
 
@@ -26,6 +26,11 @@ Kubernetes: `>=1.31.0-0`
 | image.repository | string | `"ghcr.io/baprx/host-firewall-controller"` | Container image repository. |
 | image.tag | string | `""` | Container image tag. Defaults to .Chart.AppVersion when empty. |
 | imagePullSecrets | list | `[]` | Secrets used to pull the image from a private registry. |
+| knock | object | `{"bindAddress":":8082","enabled":false,"port":8082,"trustedProxies":[]}` | HTTP endpoint that lets a rule update its dynamic endpoint from the caller's source IP. |
+| knock.bindAddress | string | `":8082"` | Address the knock server binds to. |
+| knock.enabled | bool | `false` | Expose the knock endpoint on every node. |
+| knock.port | int | `8082` | Host and container port for the knock endpoint. The chart does not add a ufw rule for this port; allow it in the host firewall when the firewall is default-deny. |
+| knock.trustedProxies | list | `[]` | CIDRs allowed to set X-Forwarded-For. |
 | lockPath | string | `""` | Host-wide ufw lock file. Defaults to <hostRoot>/run/host-firewall-controller.lock. |
 | maxAddresses | int | `16` | Maximum number of addresses used per hostname by default. |
 | maxRulesPerCR | int | `64` | Maximum number of concrete rules one HostFirewallRule may expand to. |

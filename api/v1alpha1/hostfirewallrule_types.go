@@ -67,9 +67,47 @@ const (
 // +kubebuilder:validation:XValidation:rule="self.split(':').size() == 1 || int(self.split(':')[0]) <= int(self.split(':')[1])",message="port range start must not exceed its end"
 type Port string
 
-// EndpointSpec is one side of a rule. Exactly one of cidr and host must be set
-// when the endpoint is used as the source; the destination may also omit both to
-// mean "any".
+// SecretKeyRef points at one key in a Secret in the operator namespace.
+type SecretKeyRef struct {
+	// name is the Secret name.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+
+	// key is the key inside the Secret.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Key string `json:"key"`
+}
+
+// DynamicEndpointSpec turns one endpoint into an HTTP-triggered address.
+type DynamicEndpointSpec struct {
+	// path is the exact request path, for example /knock/home. Query strings
+	// and fragments are not part of the rule.
+	// +required
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^/[A-Za-z0-9._~/-]*$`
+	Path string `json:"path"`
+
+	// ttl is how long a granted address stays in the rule. When omitted the
+	// grant never expires.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m')",message="ttl must be at least 1m"
+	TTL *metav1.Duration `json:"ttl,omitempty"`
+
+	// tokenSecretRef requires a bearer token. The Secret must be in the
+	// operator namespace and carry the label
+	// security.baprx.github.io/knock-token=true. When omitted, the path alone
+	// authorizes the knock.
+	// +optional
+	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
+}
+
+// EndpointSpec is one side of a rule. Exactly one of cidr, host and dynamic
+// must be set when the endpoint is used as the source; the destination may also
+// omit all of them to mean "any".
 type EndpointSpec struct {
 	// cidr is an IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.
 	// +optional
@@ -85,6 +123,10 @@ type EndpointSpec struct {
 	// port is the port or port range on this side of the rule.
 	// +optional
 	Port Port `json:"port,omitempty"`
+
+	// dynamic makes this endpoint the target of an HTTP knock.
+	// +optional
+	Dynamic *DynamicEndpointSpec `json:"dynamic,omitempty"`
 }
 
 // ToSpec is the destination side of a rule.
@@ -120,8 +162,9 @@ type ResolveSpec struct {
 }
 
 // HostFirewallRuleSpec defines the desired state of HostFirewallRule.
-// +kubebuilder:validation:XValidation:rule="!has(self.from) || ((has(self.from.cidr) ? 1 : 0) + (has(self.from.host) ? 1 : 0) == 1)",message="from must set exactly one of cidr or host"
-// +kubebuilder:validation:XValidation:rule="!has(self.to) || ((has(self.to.cidr) ? 1 : 0) + (has(self.to.host) ? 1 : 0) <= 1)",message="to may set at most one of cidr or host"
+// +kubebuilder:validation:XValidation:rule="!has(self.from) || ((has(self.from.cidr) ? 1 : 0) + (has(self.from.host) ? 1 : 0) + (has(self.from.dynamic) ? 1 : 0) == 1)",message="from must set exactly one of cidr, host or dynamic"
+// +kubebuilder:validation:XValidation:rule="!has(self.to) || ((has(self.to.cidr) ? 1 : 0) + (has(self.to.host) ? 1 : 0) + (has(self.to.dynamic) ? 1 : 0) <= 1)",message="to may set at most one of cidr, host or dynamic"
+// +kubebuilder:validation:XValidation:rule="!(has(self.from) && has(self.from.dynamic) && has(self.to) && has(self.to.dynamic))",message="at most one of from.dynamic and to.dynamic may be set"
 // +kubebuilder:validation:XValidation:rule="self.action != 'limit' || (has(self.to) && has(self.to.ports) && size(self.to.ports) > 0)",message="limit rules require at least one destination port"
 // +kubebuilder:validation:XValidation:rule="!has(self.from) || !has(self.from.cidr) || isIP(self.from.cidr) || isCIDR(self.from.cidr)",message="from.cidr must be a valid IP address or CIDR"
 // +kubebuilder:validation:XValidation:rule="!has(self.to) || !has(self.to.cidr) || isIP(self.to.cidr) || isCIDR(self.to.cidr)",message="to.cidr must be a valid IP address or CIDR"
@@ -183,6 +226,18 @@ type HostFirewallRuleSpec struct {
 	Resolve *ResolveSpec `json:"resolve,omitempty"`
 }
 
+// DynamicEndpoint returns the side ("from" or "to") and spec of the dynamic
+// endpoint, or "" and nil when the rule has none.
+func (s *HostFirewallRuleSpec) DynamicEndpoint() (string, *DynamicEndpointSpec) {
+	if s.From != nil && s.From.Dynamic != nil {
+		return "from", s.From.Dynamic
+	}
+	if s.To != nil && s.To.Dynamic != nil {
+		return "to", s.To.Dynamic
+	}
+	return "", nil
+}
+
 // ResolvedAddresses records the addresses a rule was expanded to on one node.
 type ResolvedAddresses struct {
 	// +optional
@@ -236,11 +291,42 @@ type NodeStatus struct {
 	Message string `json:"message,omitempty"`
 }
 
+// DynamicGrant is the cluster-wide address learned from the last knock.
+type DynamicGrant struct {
+	// path is the path that produced the grant.
+	// +required
+	Path string `json:"path"`
+
+	// side is "from" or "to".
+	// +required
+	Side string `json:"side"`
+
+	// address is the observed source IP, normalized to IPv4 or IPv6.
+	// +required
+	Address string `json:"address"`
+
+	// observedAt is when the knock was accepted.
+	// +required
+	ObservedAt metav1.Time `json:"observedAt"`
+
+	// expiresAt is when the grant stops applying. Absent means never.
+	// +optional
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
+}
+
+// DynamicGrantFieldManager owns status.dynamic when the HTTP knock server
+// writes a grant with server-side apply.
+const DynamicGrantFieldManager = "hfc-dynamic"
+
 // HostFirewallRuleStatus defines the observed state of HostFirewallRule.
 type HostFirewallRuleStatus struct {
 	// nodes maps a node name to that node's view of the rule.
 	// +optional
 	Nodes map[string]NodeStatus `json:"nodes,omitempty"`
+
+	// dynamic is the cluster-wide grant shared by every node.
+	// +optional
+	Dynamic *DynamicGrant `json:"dynamic,omitempty"`
 }
 
 // +kubebuilder:object:root=true

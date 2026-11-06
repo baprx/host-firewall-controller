@@ -84,6 +84,34 @@
         "type": "object"
       }
     },
+    "knock": {
+      "description": "HTTP endpoint that lets a rule update its dynamic endpoint from the caller's source IP.",
+      "type": "object",
+      "properties": {
+        "bindAddress": {
+          "description": "Address the knock server binds to.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Expose the knock endpoint on every node.",
+          "type": "boolean"
+        },
+        "port": {
+          "description": "Host and container port for the knock endpoint. The chart does not add a ufw rule for this port; allow it in the host firewall when the firewall is default-deny.",
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
+        "trustedProxies": {
+          "description": "CIDRs allowed to set X-Forwarded-For.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "lockPath": {
       "description": "Host-wide ufw lock file. Defaults to \u003chostRoot\u003e/run/host-firewall-controller.lock.",
       "type": "string"
@@ -373,6 +401,45 @@
               "description": "IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.",
               "type": "string"
             },
+            "dynamic": {
+              "description": "HTTP-triggered endpoint address.",
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9._~/-]*$",
+                  "maxLength": 256
+                },
+                "tokenSecretRef": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "key"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "maxLength": 253,
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 253,
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "ttl": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+                }
+              },
+              "additionalProperties": false
+            },
             "host": {
               "description": "Fully qualified domain name resolved on every node.",
               "type": "string",
@@ -499,6 +566,45 @@
             "cidr": {
               "description": "IP address or CIDR block, for example 10.0.0.0/8 or 2001:db8::1.",
               "type": "string"
+            },
+            "dynamic": {
+              "description": "HTTP-triggered endpoint address.",
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9._~/-]*$",
+                  "maxLength": 256
+                },
+                "tokenSecretRef": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "key"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "maxLength": 253,
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 253,
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "ttl": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+                }
+              },
+              "additionalProperties": false
             },
             "host": {
               "description": "Fully qualified domain name resolved on every node.",

@@ -75,12 +75,17 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 		}
 
 		matches, err := node.Matches(current.Spec.NodeSelector, nodeObject.Labels)
+		prev := current.Status.Nodes[r.NodeName]
 		if err != nil || !matches {
+			// A rule that no longer matches this node cannot keep an expired
+			// cluster-wide grant forever. Clearing it is the whole effect: the
+			// sweep intentionally has no per-node status for skipped rules.
+			errs = appendClearGrantError(errs, current.Name, r.clearStaleDynamicGrant(ctx, &current))
 			continue
 		}
 
-		prev := current.Status.Nodes[r.NodeName]
 		exp := r.expand(ctx, &current, prev)
+		errs = appendClearGrantError(errs, current.Name, r.clearStaleDynamicGrant(ctx, &current))
 		targets = append(targets, sweepTarget{
 			cr:       current,
 			token:    ufw.TokenFor(current.Name, string(current.UID)),
@@ -185,6 +190,14 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// appendClearGrantError records a failed stale-grant clear with the rule name.
+func appendClearGrantError(errs []error, ruleName string, err error) []error {
+	if err != nil {
+		return append(errs, fmt.Errorf("clear stale dynamic grant for rule %s: %w", ruleName, err))
+	}
+	return errs
 }
 
 // expectedRules lists the concrete markers and rules every CR matching this node

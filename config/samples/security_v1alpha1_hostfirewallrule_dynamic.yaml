@@ -1,0 +1,25 @@
+# The knock endpoint's port (default 8082) must be reachable through the host
+# firewall. The chart does not add a ufw rule for it; on a default-deny host,
+# allow it from your trusted proxy or management network separately.
+apiVersion: security.baprx.github.io/v1alpha1
+kind: HostFirewallRule
+metadata:
+  name: allow-ssh-dynamic
+spec:
+  action: allow
+  protocol: tcp
+  comment: SSH from the last knock
+  from:
+    dynamic:
+      # Replace this placeholder with a long, high-entropy path before applying.
+      # Two rules that share a path make knocks return 409.
+      path: /knock/change-me-to-a-long-random-path
+      ttl: 1h
+      # For token auth, uncomment this and create the Secret in the operator
+      # namespace with the label security.baprx.github.io/knock-token=true
+      # before applying the sample:
+      # tokenSecretRef:
+      #   name: ssh-knock-token
+      #   key: token
+  to:
+    ports: ["22"]

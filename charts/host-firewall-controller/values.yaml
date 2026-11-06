@@ -163,6 +163,23 @@ metrics:
     labels: {}
 
 # @schema additionalProperties: false
+# -- HTTP endpoint that lets a rule update its dynamic endpoint from the
+# caller's source IP.
+knock:
+  # -- Expose the knock endpoint on every node.
+  enabled: false
+  # -- Address the knock server binds to.
+  bindAddress: ":8082"
+  # @schema minimum: 1; maximum: 65535
+  # -- Host and container port for the knock endpoint. The chart does not add a
+  # ufw rule for this port; allow it in the host firewall when the firewall is
+  # default-deny.
+  port: 8082
+  # @schema item: string
+  # -- CIDRs allowed to set X-Forwarded-For.
+  trustedProxies: []
+
+# @schema additionalProperties: false
 # -- ServiceAccount settings.
 serviceAccount:
   # -- Create a ServiceAccount for the manager.

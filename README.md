@@ -100,8 +100,13 @@ name `hfr`.
 | `spec.protocol` | `tcp`, `udp` or `any` (default). |
 | `spec.log` | Enable per-rule ufw logging (default `false`). |
 | `spec.prepend` | Insert at the top instead of appending (default `false`). |
-| `spec.from` | Source endpoint: exactly one of `cidr` or `host`, plus optional `port`. |
-| `spec.to` | Destination endpoint: at most one of `cidr` or `host`, optional `port` or `ports` (max 15 entries). |
+| `spec.from` | Source endpoint: exactly one of `cidr`, `host` or `dynamic`, plus optional `port`. |
+| `spec.to` | Destination endpoint: at most one of `cidr`, `host` or `dynamic`, optional `port` or `ports` (max 15 entries). |
+| `spec.from.dynamic.path` | Exact HTTP path (starts with `/`, max 256 characters) whose requests update the endpoint. |
+| `spec.from.dynamic.ttl` | How long a granted address applies (minimum `1m`). Omitted means no expiry. |
+| `spec.from.dynamic.tokenSecretRef.name` | Secret in the operator namespace that holds the bearer token. It must carry the label `security.baprx.github.io/knock-token=true`. |
+| `spec.from.dynamic.tokenSecretRef.key` | Key inside that Secret. |
+| `spec.to.dynamic` | Same shape as `spec.from.dynamic`. At most one of `from.dynamic` and `to.dynamic` may be set. |
 | `spec.comment` | Human-readable note appended after the ownership marker. |
 | `spec.nodeSelector` | Standard label selector; empty means every node. |
 | `spec.resolve.refreshInterval` | FQDN refresh interval (default 5m, floor 30s). |
@@ -148,6 +153,175 @@ with the node's resolver. Resolution happens at most every
   enforced over the union of every CR that matches the node, not per CR.
   Exceeding the cap stops convergence instead of deleting anything.
 
+## Dynamic IP knocks
+
+`spec.from.dynamic` or `spec.to.dynamic` replaces a static endpoint with an
+address learned from an HTTP request. A request to the configured path records
+the caller's source address as a **cluster-wide grant** on the rule; every node
+selected by the rule then converges its ufw state with that address. Put the
+block under `to` instead to learn the destination. At most one side of a rule
+may be dynamic.
+
+```yaml
+apiVersion: security.baprx.github.io/v1alpha1
+kind: HostFirewallRule
+metadata:
+  name: allow-ssh-home
+spec:
+  action: allow
+  protocol: tcp
+  comment: SSH from the last knock
+  from:
+    dynamic:
+      path: /knock/change-me-to-a-long-random-path
+      ttl: 1h
+      tokenSecretRef:
+        name: ssh-knock-token
+        key: token
+  to:
+    ports: ["22"]
+```
+
+The path is matched exactly, including a trailing slash. It is at most 256
+characters and may contain only `[A-Za-z0-9._~/-]`.
+
+With `tokenSecretRef`, create the Secret in the **operator namespace** (the
+chart release namespace, exposed to the pod as `POD_NAMESPACE`) before applying
+the rule. The rule is cluster-scoped, so there is no per-rule namespace:
+
+```bash
+kubectl create secret generic ssh-knock-token \
+  --namespace host-firewall-system \
+  --from-literal=token="$(openssl rand -hex 32)"
+kubectl label secret ssh-knock-token -n host-firewall-system \
+  security.baprx.github.io/knock-token=true
+
+TOKEN="$(kubectl get secret ssh-knock-token -n host-firewall-system \
+  -o jsonpath='{.data.token}' | base64 -d)"
+```
+
+The knock server reads a Secret only when it carries the
+`security.baprx.github.io/knock-token=true` label. Without that gate, a rule
+author could point `tokenSecretRef` at any Secret in the operator namespace and
+use the `401`/`503` split to probe whether a key exists. Label only dedicated
+knock token Secrets.
+
+Omitting `tokenSecretRef` makes the path alone authorize the knock (path-only),
+so such a path must be high-entropy.
+
+Send a knock to any node's endpoint:
+
+```bash
+# Path-only rule, like the sample.
+curl --fail-with-body \
+  http://node.example.com:8082/knock/change-me-to-a-long-random-path
+
+# Rule with tokenSecretRef.
+curl --fail-with-body \
+  -H "Authorization: Bearer $TOKEN" \
+  http://node.example.com:8082/knock/change-me-to-a-long-random-path
+```
+
+When a TLS reverse proxy fronts the endpoint, use the proxy's HTTPS URL
+instead; the port in that URL is the proxy's, not necessarily 8082.
+
+Replace the placeholder path with your own long, random value before applying
+the rule. The
+[dynamic sample](config/samples/security_v1alpha1_hostfirewallrule_dynamic.yaml)
+is path-only. A path-only path **is the credential**: it appears in operator
+and proxy logs, so use a long, high-entropy path and treat it as a secret.
+
+Any node's endpoint accepts the knock, even one the rule does not select. The
+grant is cluster-wide; the nodes that match `spec.nodeSelector` apply it. A
+`200` means the grant was recorded, not that every node has already converged.
+Inspect the shared grant and wait for each node:
+
+```bash
+kubectl get hfr allow-ssh-home -o jsonpath='{.status.dynamic}' | jq
+kubectl get hfr allow-ssh-home -o jsonpath='{.status.nodes}' | jq
+```
+
+`status.dynamic` holds the grant:
+
+```yaml
+status:
+  dynamic:
+    path: /knock/change-me-to-a-long-random-path
+    side: from
+    address: 203.0.113.10
+    observedAt: "2026-11-02T15:04:05Z"
+    expiresAt: "2026-11-02T16:04:05Z"
+```
+
+- The last accepted knock wins. It replaces the previous address and restarts
+  the TTL; only one dynamic address applies at a time.
+- `ttl` omitted means the grant never expires. When set, it must be at least
+  `1m`. The TTL is included in the requeue bound: the rule requeues at the
+  shorter of the refresh interval and the remaining TTL, so the expired grant
+  is removed without another user event. When the other endpoint is an FQDN,
+  the shorter of the FQDN resolution interval and the remaining TTL is used.
+- A rule with no grant yet applies nothing and reports `Waiting for a knock on
+  <path>`; it is not degraded.
+- If the path or side changes, or the TTL passes, the grant is ignored and
+  cleared from status, and the ufw rule is removed.
+- Two rules may not share a knock path. While a path is ambiguous, the handler
+  returns `409` and the controller applies no dynamic rule for either rule.
+
+| Code | Meaning |
+| --- | --- |
+| `200` | Grant recorded; nodes converge asynchronously. |
+| `400` | Invalid client address, or a malformed `X-Forwarded-For` header. |
+| `401` | Missing or wrong bearer token. |
+| `404` | No rule binds the path. |
+| `405` | Method is not `GET` or `POST`. |
+| `409` | Several rules bind the path. |
+| `500` | The rule list or the status update failed. |
+| `503` | The token Secret is unreadable, has no value, or `POD_NAMESPACE` is unset. |
+
+By default the source address is the immediate peer's address.
+`X-Forwarded-For` is honored only when that peer is in `knock.trustedProxies`
+(or `--knock-trusted-proxies` outside the chart); other requests ignore the
+header. A malformed forwarding header is rejected with `400` instead of falling
+back to the proxy's address. Behind a Service or load balancer, source-IP
+preservation depends on `externalTrafficPolicy`; the supported setup is a
+trusted proxy plus its CIDR in `knock.trustedProxies`.
+
+The endpoint is disabled by default: the chart value `knock.enabled` is
+`false`, so no new host port appears on existing installs. To enable it:
+
+```yaml
+knock:
+  enabled: true
+  bindAddress: ":8082"
+  port: 8082
+  trustedProxies:
+    - 10.0.0.0/8
+```
+
+- The default port is `8082`, published as a `hostPort` on every node. Change
+  `knock.bindAddress` and `knock.port` together so the host port reaches the
+  address the server actually binds.
+- The chart does **not** add a ufw rule for the knock port. On a host whose
+  firewall is default-deny, the knock is dropped before it reaches the server.
+  Allow the port from your trusted proxy or management network with a static
+  rule, for example `from.cidr: 10.0.0.0/8` and `to.ports: ["8082"]`; otherwise
+  bind the server to a loopback or private address that is already reachable.
+- When `knock.enabled=true` and `rbac.create=true`, the chart creates a
+  namespaced `Role` and `RoleBinding` granting only `get` on `secrets` in the
+  release namespace. If `rbac.create=false`, provide that namespaced Role and
+  RoleBinding yourself.
+- Outside the chart, pass `--knock-bind-address=:8082` (`0` or empty disables
+  the server) and optionally `--knock-trusted-proxies=10.0.0.0/8`. Set
+  `POD_NAMESPACE` to the namespace that holds the token Secrets; leave it unset
+  only when every dynamic rule is path-only. A non-chart install that uses
+  `tokenSecretRef` also needs a namespaced `get` Role and RoleBinding on
+  `secrets` in that namespace, equivalent to the chart's.
+
+> **Warning:** the endpoint speaks plain HTTP. The path and the bearer token
+> are visible to anyone on the network path. Put a TLS reverse proxy or VPN in
+> front, or bind the server to a private address that is not reachable from
+> untrusted networks.
+
 ## Ownership and safety
 
 Every rule the operator creates ends with a ufw comment:
@@ -184,6 +358,7 @@ Useful metrics:
 | `hfc_managed_rules` | Managed rules currently on this node. |
 | `hfc_apply_duration_seconds` | Duration of one ufw add/delete. |
 | `hfc_resolution_failures_total` | Failed DNS resolutions. |
+| `hfc_knock_requests_total` | Knock requests by result (`ok`, `not_found`, `ambiguous`, `unauthorized`, `bad_request`, `error`). |
 | `hfc_reconcile_errors_total` | Reconciliations that returned an error. |
 
 ## Removing the operator

@@ -72,12 +72,17 @@ func installUFWOnKindNodes() {
 	ExpectWithOffset(1, nodes).NotTo(BeEmpty(), "no kind nodes found")
 
 	for _, node := range nodes {
-		script := "command -v ufw >/dev/null 2>&1 || (" +
-			"apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ufw iptables)"
+		script := "set -e; " +
+			"if ! command -v ufw >/dev/null 2>&1; then " +
+			"apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ufw iptables; " +
+			"fi; " +
+			"if ! command -v curl >/dev/null 2>&1; then " +
+			"apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y curl; " +
+			"fi"
 		cmd := exec.Command(containerCLI, "exec", node, "sh", "-c", script)
 		output, err := utils.Run(cmd)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(),
-			"Failed to install ufw on node %s: %s", node, output)
+			"Failed to install e2e prerequisites on node %s: %s", node, output)
 	}
 }
 

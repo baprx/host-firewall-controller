@@ -34,6 +34,31 @@ deliberate and are enforced by code, not convention.
    `commentsUnsupported` and recognizes its own rule by match key. If the rule
    is missing it is added again; a spec change can leave the previous unmarked
    rule behind because it cannot be identified safely.
+8. **A dynamic rule stays operator-owned.** A dynamic endpoint only changes
+   which address the rule expands to. The resulting ufw rule carries the same
+   `HFC:` marker, goes through the same collision and delete checks, and never
+   adopts or removes an unmanaged rule.
+9. **Knock auth fails closed.** When a rule sets `tokenSecretRef`, an unreadable
+   Secret, a Secret without the `security.baprx.github.io/knock-token=true`
+   label, a missing key, an empty value, or an unset `POD_NAMESPACE` rejects the
+   request with `503` and records no grant. A missing or wrong bearer token
+   returns `401`. There is no fallback to path-only authorization. The label
+   gate prevents a rule author from pointing at arbitrary Secrets in the
+   operator namespace and using the status codes to probe their contents.
+10. **Duplicate knock paths apply nothing.** If several rules bind the same
+    path, the endpoint returns `409`, and the controller marks the affected
+    rules degraded and expands them to no address, so their previous dynamic
+    rules are removed. It never guesses which rule the request meant.
+11. **Expired and stale grants do not linger.** A grant past its `ttl`, or whose
+    path or side no longer matches the spec, is removed from status and the
+    rule converges to no address, deleting its ufw rule in the same pass.
+    Clearing is a compare-and-remove, so a concurrent knock is not lost.
+12. **The knock endpoint is opt-in.** It is disabled by default
+    (`knock.enabled=false`, `--knock-bind-address=0`) and inert when no rule uses
+    `dynamic`. It speaks plain HTTP: the path and token are visible on the
+    network, so expose it only behind a TLS reverse proxy, a VPN, or a private
+    bind address. `X-Forwarded-For` is trusted only from
+    `knock.trustedProxies`/`--knock-trusted-proxies`.
 
 ## Ownership marker
 

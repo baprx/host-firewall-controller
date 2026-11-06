@@ -20,11 +20,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	securityv1alpha1 "github.com/baprx/host-firewall-controller/api/v1alpha1"
@@ -119,10 +122,64 @@ func (r *HostFirewallRuleReconciler) patchStatus(
 		},
 	}
 
+	// A rule that expands to nothing has no resolved addresses. NodeStatus's
+	// Resolved field is a value struct, so omitempty never drops it, and the
+	// JSON encoder emits "resolved": {}. When this manager previously owned
+	// resolved.from, the API server turns that empty object into null, which the
+	// CRD's structural schema rejects with 422. Omit the field from the apply
+	// body instead: server-side apply then removes the subfields this manager
+	// owned. This happens whenever a dynamic grant expires, its path changes, or
+	// its path becomes ambiguous, so it is part of the normal lifecycle.
+	if len(status.Resolved.From) == 0 && len(status.Resolved.To) == 0 {
+		body, err := statusApplyBody(patch, r.NodeName)
+		if err != nil {
+			return err
+		}
+		return r.SubResource("status").Patch(ctx, patch,
+			client.RawPatch(types.ApplyPatchType, body),
+			client.FieldOwner(fieldManagerFor(r.NodeName)),
+			client.ForceOwnership,
+		)
+	}
+
 	return r.SubResource("status").Apply(ctx, patch,
 		client.FieldOwner(fieldManagerFor(r.NodeName)),
 		client.ForceOwnership,
 	)
+}
+
+// statusApplyBody marshals an apply document and drops an empty resolved object
+// for the given node. The CRD cannot store that object as null, and omission is
+// the only way to remove it through server-side apply.
+func statusApplyBody(
+	patch *securityv1alpha1.HostFirewallRule,
+	nodeName string,
+) ([]byte, error) {
+	raw, err := json.Marshal(patch)
+	if err != nil {
+		return nil, err
+	}
+
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+
+	status, ok := document["status"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("status is not an object")
+	}
+	nodes, ok := status["nodes"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("status.nodes is not an object")
+	}
+	node, ok := nodes[nodeName].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("status.nodes[%q] is not an object", nodeName)
+	}
+	delete(node, "resolved")
+
+	return json.Marshal(document)
 }
 
 // fieldManagerFor turns a node name into a field manager that fits the 128

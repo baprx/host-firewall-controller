@@ -160,6 +160,119 @@ key. `degraded` means a non-fatal problem (DNS failure with last-known-good
 rules, truncation, a refused add). `commentsUnsupported` is described in
 [safety.md](safety.md).
 
+## Dynamic IP knocks
+
+A rule may bind one endpoint (`from` or `to`, never both) to an exact HTTP path.
+A request to that path on any node records the caller's address as a
+cluster-wide grant, and every selected node converges its own ufw state with
+that address. This is a third endpoint source next to an explicit CIDR and an
+FQDN.
+
+The server lives in `internal/knock` and is added to the manager as a Runnable
+in every pod. `NeedLeaderElection` returns `false`, so each pod serves its own
+endpoint and a knock can arrive at a node the rule does not select.
+`--knock-bind-address` (chart `knock.bindAddress`) sets the listen address; `0`
+or empty disables the server. `--knock-trusted-proxies` lists the CIDRs whose
+`X-Forwarded-For` header is trusted. One handler serves every path and no routes
+are registered at runtime.
+
+The handler:
+
+1. Accepts `GET` and `POST`; other methods return `405`.
+2. Lists rules through the manager cache and matches `r.URL.Path` exactly
+   against `from.dynamic.path` or `to.dynamic.path`. No match returns `404`;
+   several matches return `409`.
+3. When the rule sets `tokenSecretRef`, reads the Secret with the uncached API
+   reader (`mgr.GetAPIReader()`) from the namespace in `POD_NAMESPACE` and
+   compares `Authorization: Bearer` in constant time. Only Secrets labeled
+   `security.baprx.github.io/knock-token=true` are usable, so a rule cannot probe
+   arbitrary Secrets. An unreadable or unlabeled Secret, a missing key, an empty
+   value, or an unset namespace returns `503`; a missing or wrong token returns
+   `401`. There is no fallback to path-only auth.
+4. Takes the source address from `RemoteAddr`. It walks `X-Forwarded-For` from
+   right to left only when the immediate peer is in the trusted-proxy list; a
+   malformed header returns `400` rather than falling back to the proxy's
+   address. Addresses are normalized to IPv4 or IPv6.
+5. Writes the grant to `status.dynamic` with server-side apply under the
+   `hfc-dynamic` field manager. A new knock replaces the previous grant and
+   restarts the TTL.
+6. Returns `200` with a short body.
+
+A `200` means the grant was recorded, not that convergence finished. The status
+write wakes the controllers through the watch and each node applies the address
+asynchronously.
+
+**Grant storage.** `status.dynamic` is shared by the whole cluster:
+
+```yaml
+status:
+  dynamic:
+    path: /knock/7f3c9a2e5b1d4c8f
+    side: from
+    address: 203.0.113.10
+    observedAt: "2026-11-02T15:04:05Z"
+    expiresAt: "2026-11-02T16:04:05Z"
+```
+
+`path` and `side` make a grant distinguishable from the current spec, so a
+grant left over after the path changes or the block moves to the other endpoint
+is never applied. `expiresAt` is omitted when the rule has no `ttl`.
+
+SSA ownership stays disjoint: `hfc-<sha256(node)[:12]>` owns
+`status.nodes.<node>`, and `hfc-dynamic` owns `status.dynamic`. Nodes never write
+each other's status. The token Secret is read through the uncached API reader on
+purpose, so the operator does not run a cluster-wide Secret informer; the cost
+is one direct API call per knock that requires a token.
+
+**Propagation and expiry.** The controller `For` predicate is
+`Or(GenerationChangedPredicate{}, dynamicGrantChanged())`. The second predicate
+compares the old and new `status.dynamic` and returns true only on an update
+that changes the grant. A knock therefore wakes every pod, while ordinary
+per-node `status.nodes` writes still do not trigger reconciles. Every pod
+watches all rules, so all of them see the grant and converge their own ufw
+state; the pod that accepted the request uses the same watch.
+
+A second `Watches` on `HostFirewallRule`, gated by
+`GenerationChangedPredicate`, maps every create, spec update, and delete to all
+rules that share the same knock path (both the old and the new path on an
+update). A path becoming or ceasing to be ambiguous therefore re-reconciles the
+other rules immediately instead of waiting for the next sweep.
+
+Expansion treats a dynamic endpoint like a hostname that has not resolved yet:
+
+- a usable grant returns its single address, which is not filtered by
+  `resolve.ipFamilies`;
+- no grant produces no concrete rule and `Waiting for a knock on <path>`, and is
+  not degraded;
+- a path/side mismatch, an expiry, or a TTL rule whose grant has no
+  `expiresAt` produces no address and a message.
+
+A live grant with `expiresAt` is included in the requeue bound: the rule
+requeues at the shorter of the refresh interval and the remaining TTL, so the
+expired grant is removed without another user event. A grant without `expiresAt`
+does not cause a requeue on its own; a rule that is waiting for a knock or has
+an unusable grant does not poll at all, because a status write wakes it. When
+the other endpoint is an FQDN, the shorter of the FQDN resolution interval and
+the remaining TTL is used.
+`status.nodes[].resolved` records the address used in this node's expansion; it
+does not mean convergence succeeded.
+
+Every reconcile and every sweep clears a grant that no longer applies: a missing
+dynamic endpoint, a path or side change, an invalid or unspecified address, an
+expired TTL, or a TTL rule whose grant is missing `expiresAt`. Clearing uses a
+JSON patch with a `test` operation on the exact grant followed by a remove. The compare-and-remove is atomic: if a knock replaces
+the grant in between, the test fails, the newer grant is kept, and the next
+reconcile sees it. The expansion that precedes the clear already excludes the
+unusable address, so the same pass deletes its ufw rule.
+
+Cross-object path uniqueness cannot be expressed in CEL. The controller lists
+rules and treats a path used by more than one rule as ambiguous: the affected
+rules are marked degraded, expand to no address, and their previous dynamic ufw
+rules are removed by the normal delete phase. The path watch wakes the other
+rules as soon as a conflicting rule is created or its path changes, so
+revocation does not wait for the sweep. The handler independently returns `409`
+for the same path. Both sides fail closed.
+
 ## Concurrency and locking
 
 Two levels of locking protect ufw:
