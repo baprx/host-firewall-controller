@@ -184,9 +184,11 @@ The handler:
    several matches return `409`.
 3. When the rule sets `tokenSecretRef`, reads the Secret with the uncached API
    reader (`mgr.GetAPIReader()`) from the namespace in `POD_NAMESPACE` and
-   compares `Authorization: Bearer` in constant time. An unreadable Secret, a
-   missing key, an empty value, or an unset namespace returns `503`; a missing or
-   wrong token returns `401`. There is no fallback to path-only auth.
+   compares `Authorization: Bearer` in constant time. Only Secrets labeled
+   `security.baprx.github.io/knock-token=true` are usable, so a rule cannot probe
+   arbitrary Secrets. An unreadable or unlabeled Secret, a missing key, an empty
+   value, or an unset namespace returns `503`; a missing or wrong token returns
+   `401`. There is no fallback to path-only auth.
 4. Takes the source address from `RemoteAddr`. It walks `X-Forwarded-For` from
    right to left only when the immediate peer is in the trusted-proxy list; a
    malformed header returns `400` rather than falling back to the proxy's
@@ -230,26 +232,35 @@ per-node `status.nodes` writes still do not trigger reconciles. Every pod
 watches all rules, so all of them see the grant and converge their own ufw
 state; the pod that accepted the request uses the same watch.
 
+A second `Watches` on `HostFirewallRule`, gated by
+`GenerationChangedPredicate`, maps every create, spec update, and delete to all
+rules that share the same knock path (both the old and the new path on an
+update). A path becoming or ceasing to be ambiguous therefore re-reconciles the
+other rules immediately instead of waiting for the next sweep.
+
 Expansion treats a dynamic endpoint like a hostname that has not resolved yet:
 
 - a usable grant returns its single address, which is not filtered by
   `resolve.ipFamilies`;
 - no grant produces no concrete rule and `Waiting for a knock on <path>`, and is
   not degraded;
-- a path/side mismatch or an expiry produces no address and a message.
+- a path/side mismatch, an expiry, or a TTL rule whose grant has no
+  `expiresAt` produces no address and a message.
 
 A live grant with `expiresAt` is included in the requeue bound: the rule
 requeues at the shorter of the refresh interval and the remaining TTL, so the
 expired grant is removed without another user event. A grant without `expiresAt`
-does not cause a requeue on its own. When the other endpoint is an FQDN, the
-shorter of the FQDN resolution interval and the remaining TTL is used.
+does not cause a requeue on its own; a rule that is waiting for a knock or has
+an unusable grant does not poll at all, because a status write wakes it. When
+the other endpoint is an FQDN, the shorter of the FQDN resolution interval and
+the remaining TTL is used.
 `status.nodes[].resolved` records the address used in this node's expansion; it
 does not mean convergence succeeded.
 
 Every reconcile and every sweep clears a grant that no longer applies: a missing
-dynamic endpoint, a path or side change, an invalid or unspecified address, or
-an expired TTL. Clearing uses a JSON patch with a `test` operation on the exact
-grant followed by a remove. The compare-and-remove is atomic: if a knock replaces
+dynamic endpoint, a path or side change, an invalid or unspecified address, an
+expired TTL, or a TTL rule whose grant is missing `expiresAt`. Clearing uses a
+JSON patch with a `test` operation on the exact grant followed by a remove. The compare-and-remove is atomic: if a knock replaces
 the grant in between, the test fails, the newer grant is kept, and the next
 reconcile sees it. The expansion that precedes the clear already excludes the
 unusable address, so the same pass deletes its ufw rule.
@@ -257,8 +268,10 @@ unusable address, so the same pass deletes its ufw rule.
 Cross-object path uniqueness cannot be expressed in CEL. The controller lists
 rules and treats a path used by more than one rule as ambiguous: the affected
 rules are marked degraded, expand to no address, and their previous dynamic ufw
-rules are removed by the normal delete phase. The handler independently returns
-`409` for the same path. Both sides fail closed.
+rules are removed by the normal delete phase. The path watch wakes the other
+rules as soon as a conflicting rule is created or its path changes, so
+revocation does not wait for the sweep. The handler independently returns `409`
+for the same path. Both sides fail closed.
 
 ## Concurrency and locking
 

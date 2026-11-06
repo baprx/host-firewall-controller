@@ -28,15 +28,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	securityv1alpha1 "github.com/baprx/host-firewall-controller/api/v1alpha1"
 )
 
 const (
-	dynamicWaitingMessage  = "Waiting for a knock on %s"
-	dynamicMismatchMessage = "Dynamic grant does not match the current spec"
-	dynamicExpiredMessage  = "Dynamic grant expired"
+	dynamicWaitingMessage       = "Waiting for a knock on %s"
+	dynamicMismatchMessage      = "Dynamic grant does not match the current spec"
+	dynamicExpiredMessage       = "Dynamic grant expired"
+	dynamicMissingExpiryMessage = "Dynamic grant is missing its expiry"
 )
 
 // dynamicAddress returns the address a dynamic endpoint currently applies. ok is
@@ -64,6 +67,11 @@ func dynamicAddress(
 		return "", dynamicMismatchMessage, 0, false
 	}
 
+	if dynamic.TTL != nil && grant.ExpiresAt == nil {
+		// A TTL rule whose grant has no expiry cannot be enforced; fail closed
+		// instead of letting the address apply forever.
+		return "", dynamicMissingExpiryMessage, 0, false
+	}
 	if grant.ExpiresAt != nil && !now.Before(grant.ExpiresAt.Time) {
 		return "", dynamicExpiredMessage, 0, false
 	}
@@ -148,7 +156,11 @@ func (r *HostFirewallRuleReconciler) clearStaleDynamicGrant(
 	side, dynamic := cr.Spec.DynamicEndpoint()
 	if dynamic != nil && grant.Path == dynamic.Path && grant.Side == side {
 		if addr, err := netip.ParseAddr(grant.Address); err == nil && !addr.IsUnspecified() {
-			if grant.ExpiresAt == nil || time.Now().Before(grant.ExpiresAt.Time) {
+			if grant.ExpiresAt == nil {
+				if dynamic.TTL == nil {
+					return nil
+				}
+			} else if time.Now().Before(grant.ExpiresAt.Time) {
 				return nil
 			}
 		}
@@ -159,6 +171,41 @@ func (r *HostFirewallRuleReconciler) clearStaleDynamicGrant(
 	}
 	cr.Status.Dynamic = nil
 	return nil
+}
+
+// mapDynamicPathToRules enqueues every rule that shares a knock path with
+// object. A path becoming or ceasing to be ambiguous changes which rules
+// apply, but the other rules' generation does not change, so this watch wakes
+// them without waiting for the next sweep.
+func (r *HostFirewallRuleReconciler) mapDynamicPathToRules(
+	ctx context.Context,
+	object client.Object,
+) []reconcile.Request {
+	rule, ok := object.(*securityv1alpha1.HostFirewallRule)
+	if !ok {
+		return nil
+	}
+	_, dynamic := rule.Spec.DynamicEndpoint()
+	if dynamic == nil {
+		return nil
+	}
+
+	var list securityv1alpha1.HostFirewallRuleList
+	if err := r.List(ctx, &list); err != nil {
+		logf.FromContext(ctx).Error(err, "Could not list rules after a knock path change")
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		_, other := list.Items[i].Spec.DynamicEndpoint()
+		if other != nil && other.Path == dynamic.Path {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+				Name: list.Items[i].Name,
+			}})
+		}
+	}
+	return requests
 }
 
 // dynamicPathAmbiguous reports whether more than one rule binds the same knock

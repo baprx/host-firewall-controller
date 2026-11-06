@@ -42,6 +42,13 @@ const (
 	apiTimeout = 10 * time.Second
 	// shutdownTimeout bounds the graceful shutdown started by Start.
 	shutdownTimeout = 10 * time.Second
+
+	// TokenSecretLabel marks a Secret as usable by tokenSecretRef. The check
+	// stops a rule author from pointing at an arbitrary Secret in the operator
+	// namespace and using the 401/503 split to probe its contents.
+	TokenSecretLabel = "security.baprx.github.io/knock-token"
+	// TokenSecretLabelValue is the value TokenSecretLabel must have.
+	TokenSecretLabelValue = "true"
 )
 
 // Server serves the dynamic IP knock endpoint. It is a manager Runnable: Start
@@ -240,6 +247,12 @@ func (s *Server) authorize(
 	key := types.NamespacedName{Namespace: s.Namespace, Name: ref.Name}
 	if err := s.Reader.Get(ctx, key, secret); err != nil {
 		return http.StatusServiceUnavailable, fmt.Errorf("read token Secret: %w", err)
+	}
+	if secret.Labels[TokenSecretLabel] != TokenSecretLabelValue {
+		return http.StatusServiceUnavailable, fmt.Errorf(
+			"token Secret %q is not labeled %s=%s",
+			ref.Name, TokenSecretLabel, TokenSecretLabelValue,
+		)
 	}
 
 	token := secret.Data[ref.Key]

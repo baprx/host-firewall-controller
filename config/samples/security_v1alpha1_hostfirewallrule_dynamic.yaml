@@ -16,7 +16,8 @@ spec:
       path: /knock/change-me-to-a-long-random-path
       ttl: 1h
       # For token auth, uncomment this and create the Secret in the operator
-      # namespace before applying the sample:
+      # namespace with the label security.baprx.github.io/knock-token=true
+      # before applying the sample:
       # tokenSecretRef:
       #   name: ssh-knock-token
       #   key: token

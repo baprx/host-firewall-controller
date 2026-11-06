@@ -88,6 +88,31 @@ var _ = Describe("dynamic expansion", func() {
 		Expect(exp.Degraded).To(BeFalse())
 	})
 
+	It("does not requeue while waiting for a knock", func() {
+		name := uniqueRuleName("dynamic-waiting-requeue")
+		createRule(name, dynamicFromRule("/knock/waiting-"+rand.String(8)))
+
+		exp := reconciler.expand(ctx, fetchRule(name), securityv1alpha1.NodeStatus{})
+
+		Expect(exp.Rules).To(BeEmpty())
+		Expect(exp.RequeueAfter).To(BeZero())
+	})
+
+	It("does not requeue a degraded rule with an ambiguous path", func() {
+		path := "/knock/ambiguous-requeue-" + rand.String(8)
+		name := uniqueRuleName("dynamic-ambiguous-requeue-a")
+		createRule(name, dynamicFromRule(path))
+		createRule(uniqueRuleName("dynamic-ambiguous-requeue-b"), dynamicFromRule(path))
+		future := metav1.NewTime(time.Now().Add(time.Hour))
+		seedDynamicGrant(name, dynamicGrant(path, "from", &future))
+
+		exp := reconciler.expand(ctx, fetchRule(name), securityv1alpha1.NodeStatus{})
+
+		Expect(exp.Rules).To(BeEmpty())
+		Expect(exp.Degraded).To(BeTrue())
+		Expect(exp.RequeueAfter).To(BeZero())
+	})
+
 	It("applies the grant address as the source", func() {
 		name := uniqueRuleName("dynamic-source")
 		createRule(name, dynamicFromRule("/knock/home"))

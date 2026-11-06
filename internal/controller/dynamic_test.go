@@ -45,6 +45,11 @@ func TestDynamicAddress(t *testing.T) {
 			To: &securityv1alpha1.ToSpec{Ports: []securityv1alpha1.Port{"22"}},
 		}
 	}
+	dynamicSpecWithTTL := func() securityv1alpha1.HostFirewallRuleSpec {
+		spec := dynamicSpec()
+		spec.From.Dynamic.TTL = &metav1.Duration{Duration: time.Hour}
+		return spec
+	}
 	withGrant := func(mutate func(*securityv1alpha1.DynamicGrant)) *securityv1alpha1.DynamicGrant {
 		grant := &securityv1alpha1.DynamicGrant{
 			Path:       "/knock/home",
@@ -86,6 +91,13 @@ func TestDynamicAddress(t *testing.T) {
 			grant:    withGrant(nil),
 			wantAddr: "203.0.113.9",
 			wantOK:   true,
+		},
+		{
+			name:    "grant without an expiry when the spec sets a ttl",
+			spec:    dynamicSpecWithTTL(),
+			grant:   withGrant(nil),
+			wantMsg: "Dynamic grant is missing its expiry",
+			wantOK:  false,
 		},
 		{
 			name:        "matching grant expiring in one hour",
@@ -295,6 +307,17 @@ var _ = Describe("dynamic grant", func() {
 			Expect(rule.Status.Dynamic.Address).To(Equal("203.0.113.9"))
 		})
 
+		It("clears a grant missing its expiry when the rule sets a TTL", func() {
+			name := uniqueRuleName("dynamic-ttl-missing-expiry")
+			spec := dynamicSpec("/knock/ttl-missing-" + rand.String(8))
+			spec.From.Dynamic.TTL = &metav1.Duration{Duration: time.Hour}
+			createRule(name, spec)
+			seedDynamicGrant(name, grant("203.0.113.9", spec.From.Dynamic.Path, nil))
+
+			Expect(r.clearStaleDynamicGrant(ctx, fetchRule(name))).To(Succeed())
+			Expect(fetchRule(name).Status.Dynamic).To(BeNil())
+		})
+
 		It("clears a grant when the path no longer matches the spec", func() {
 			name := uniqueRuleName("dynamic-path-changed")
 			createRule(name, dynamicSpec("/knock/new"))
@@ -356,6 +379,34 @@ var _ = Describe("dynamic grant", func() {
 			// The JSON patch test fails because status.dynamic is already gone.
 			Expect(r.clearStaleDynamicGrant(ctx, stale)).To(Succeed())
 			Expect(fetchRule(name).Status.Dynamic).To(BeNil())
+		})
+	})
+
+	Describe("mapDynamicPathToRules", func() {
+		It("enqueues every rule that shares the changed rule's path", func() {
+			path := "/knock/shared-" + rand.String(8)
+			firstName := uniqueRuleName("dynamic-shared-a")
+			secondName := uniqueRuleName("dynamic-shared-b")
+			otherName := uniqueRuleName("dynamic-shared-other")
+			createRule(firstName, dynamicSpec(path))
+			createRule(secondName, dynamicSpec(path))
+			createRule(otherName, dynamicSpec("/knock/other-"+rand.String(8)))
+
+			requests := r.mapDynamicPathToRules(ctx, fetchRule(secondName))
+
+			names := make([]string, 0, len(requests))
+			for _, request := range requests {
+				names = append(names, request.Name)
+			}
+			Expect(names).To(ConsistOf(firstName, secondName))
+			Expect(names).NotTo(ContainElement(otherName))
+		})
+
+		It("does not enqueue anything for a rule without a dynamic endpoint", func() {
+			name := uniqueRuleName("dynamic-shared-static")
+			createRule(name, allowTCP("22"))
+
+			Expect(r.mapDynamicPathToRules(ctx, fetchRule(name))).To(BeEmpty())
 		})
 	})
 

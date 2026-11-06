@@ -104,7 +104,7 @@ name `hfr`.
 | `spec.to` | Destination endpoint: at most one of `cidr`, `host` or `dynamic`, optional `port` or `ports` (max 15 entries). |
 | `spec.from.dynamic.path` | Exact HTTP path (starts with `/`, max 256 characters) whose requests update the endpoint. |
 | `spec.from.dynamic.ttl` | How long a granted address applies (minimum `1m`). Omitted means no expiry. |
-| `spec.from.dynamic.tokenSecretRef.name` | Secret in the operator namespace that holds the bearer token. |
+| `spec.from.dynamic.tokenSecretRef.name` | Secret in the operator namespace that holds the bearer token. It must carry the label `security.baprx.github.io/knock-token=true`. |
 | `spec.from.dynamic.tokenSecretRef.key` | Key inside that Secret. |
 | `spec.to.dynamic` | Same shape as `spec.from.dynamic`. At most one of `from.dynamic` and `to.dynamic` may be set. |
 | `spec.comment` | Human-readable note appended after the ownership marker. |
@@ -193,10 +193,18 @@ the rule. The rule is cluster-scoped, so there is no per-rule namespace:
 kubectl create secret generic ssh-knock-token \
   --namespace host-firewall-system \
   --from-literal=token="$(openssl rand -hex 32)"
+kubectl label secret ssh-knock-token -n host-firewall-system \
+  security.baprx.github.io/knock-token=true
 
 TOKEN="$(kubectl get secret ssh-knock-token -n host-firewall-system \
   -o jsonpath='{.data.token}' | base64 -d)"
 ```
+
+The knock server reads a Secret only when it carries the
+`security.baprx.github.io/knock-token=true` label. Without that gate, a rule
+author could point `tokenSecretRef` at any Secret in the operator namespace and
+use the `401`/`503` split to probe whether a key exists. Label only dedicated
+knock token Secrets.
 
 Omitting `tokenSecretRef` makes the path alone authorize the knock (path-only),
 so such a path must be high-entropy.

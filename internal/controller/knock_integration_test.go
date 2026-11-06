@@ -51,10 +51,21 @@ func knockRequest(
 	return recorder
 }
 
-// createKnockSecret creates a Secret and removes it after the spec.
+// createKnockSecret creates a knock token Secret and removes it after the spec.
 func createKnockSecret(namespace, name string, data map[string][]byte) {
+	createKnockSecretWithLabels(namespace, name, data, map[string]string{
+		"security.baprx.github.io/knock-token": "true",
+	})
+}
+
+// createKnockSecretWithLabels creates a Secret with the given labels.
+func createKnockSecretWithLabels(
+	namespace, name string,
+	data map[string][]byte,
+	labels map[string]string,
+) {
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
 		Data:       data,
 	}
 	Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -197,6 +208,25 @@ var _ = Describe("knock server", func() {
 			Key:  "token",
 		}
 		createRule(name, spec)
+
+		recorder := knockRequest(srv, http.MethodGet, path, "203.0.113.9:1234", map[string]string{
+			"Authorization": "Bearer secret",
+		})
+
+		Expect(recorder.Code).To(Equal(http.StatusServiceUnavailable))
+		Expect(fetchRule(name).Status.Dynamic).To(BeNil())
+	})
+
+	It("returns 503 when the token Secret is not labeled for knocks", func() {
+		name, path, spec := dynamicRule("unlabeled-secret")
+		spec.From.Dynamic.TokenSecretRef = &securityv1alpha1.SecretKeyRef{
+			Name: "ssh-knock-" + rand.String(6),
+			Key:  "token",
+		}
+		createRule(name, spec)
+		createKnockSecretWithLabels(namespace, spec.From.Dynamic.TokenSecretRef.Name, map[string][]byte{
+			"token": []byte("secret"),
+		}, nil)
 
 		recorder := knockRequest(srv, http.MethodGet, path, "203.0.113.9:1234", map[string]string{
 			"Authorization": "Bearer secret",

@@ -39,9 +39,12 @@ deliberate and are enforced by code, not convention.
    `HFC:` marker, goes through the same collision and delete checks, and never
    adopts or removes an unmanaged rule.
 9. **Knock auth fails closed.** When a rule sets `tokenSecretRef`, an unreadable
-   Secret, a missing key, an empty value, or an unset `POD_NAMESPACE` rejects the
+   Secret, a Secret without the `security.baprx.github.io/knock-token=true`
+   label, a missing key, an empty value, or an unset `POD_NAMESPACE` rejects the
    request with `503` and records no grant. A missing or wrong bearer token
-   returns `401`. There is no fallback to path-only authorization.
+   returns `401`. There is no fallback to path-only authorization. The label
+   gate prevents a rule author from pointing at arbitrary Secrets in the
+   operator namespace and using the status codes to probe their contents.
 10. **Duplicate knock paths apply nothing.** If several rules bind the same
     path, the endpoint returns `409`, and the controller marks the affected
     rules degraded and expands them to no address, so their previous dynamic

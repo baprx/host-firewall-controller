@@ -99,11 +99,12 @@ func (r *HostFirewallRuleReconciler) expand(
 	maxAddresses := r.maxAddressesFor(cr)
 	families := r.familiesFor(cr)
 
+	now := time.Now()
 	out := expansion{RequeueAfter: interval}
 	var messages []string
 
 	fromAddrs, fromDegraded, fromMessage, fromRequeue := r.resolveEndpoint(
-		ctx, cr, cr.Spec.From, prev.Resolved.From, prev, interval, families, maxAddresses,
+		ctx, cr, cr.Spec.From, prev.Resolved.From, prev, interval, families, maxAddresses, now,
 	)
 	if fromMessage != "" {
 		messages = append(messages, fromMessage)
@@ -116,7 +117,7 @@ func (r *HostFirewallRuleReconciler) expand(
 	}
 
 	toAddrs, toDegraded, toMessage, toRequeue := r.resolveEndpoint(
-		ctx, cr, toEndpoint(cr.Spec.To), prev.Resolved.To, prev, interval, families, maxAddresses,
+		ctx, cr, toEndpoint(cr.Spec.To), prev.Resolved.To, prev, interval, families, maxAddresses, now,
 	)
 	if toMessage != "" {
 		messages = append(messages, toMessage)
@@ -130,6 +131,7 @@ func (r *HostFirewallRuleReconciler) expand(
 
 	if len(fromAddrs) == 0 || len(toAddrs) == 0 {
 		out.Message = strings.Join(messages, "; ")
+		out.RequeueAfter = nextRequeue(cr, fromRequeue, toRequeue, out.RequeueAfter)
 		return out
 	}
 
@@ -159,24 +161,35 @@ func (r *HostFirewallRuleReconciler) expand(
 		To:   uniqueStrings(toAddrs),
 	}
 	out.Message = strings.Join(messages, "; ")
-
-	// Only hostname rules and expiring grants need periodic re-resolution.
-	if !hasHostname(cr.Spec.From) && !hasHostname(toEndpoint(cr.Spec.To)) && !hasDynamicExpiry(cr, time.Now()) {
-		out.RequeueAfter = 0
-	}
+	out.RequeueAfter = nextRequeue(cr, fromRequeue, toRequeue, out.RequeueAfter)
 
 	return out
 }
 
-func hasHostname(spec *securityv1alpha1.EndpointSpec) bool {
-	return spec != nil && spec.Host != nil && *spec.Host != ""
+// nextRequeue keeps a periodic reconcile only when something changes without
+// an event: a hostname must be re-resolved and a live grant with an expiry must
+// be removed at that time. Waiting, mismatched, expired, and ambiguous grants
+// are woken by status.dynamic writes or the knock-path watch, so they must not
+// poll.
+func nextRequeue(
+	cr *securityv1alpha1.HostFirewallRule,
+	fromRequeue, toRequeue, base time.Duration,
+) time.Duration {
+	poll := hasHostname(cr.Spec.From) || hasHostname(toEndpoint(cr.Spec.To))
+	if cr.Spec.From != nil && cr.Spec.From.Dynamic != nil && fromRequeue > 0 {
+		poll = true
+	}
+	if cr.Spec.To != nil && cr.Spec.To.Dynamic != nil && toRequeue > 0 {
+		poll = true
+	}
+	if !poll {
+		return 0
+	}
+	return base
 }
 
-// hasDynamicExpiry reports whether the rule has a live grant with an expiry, so
-// expansion must requeue at that time even when no hostname is involved.
-func hasDynamicExpiry(cr *securityv1alpha1.HostFirewallRule, now time.Time) bool {
-	_, _, requeue, ok := dynamicAddress(cr, now)
-	return ok && requeue > 0
+func hasHostname(spec *securityv1alpha1.EndpointSpec) bool {
+	return spec != nil && spec.Host != nil && *spec.Host != ""
 }
 
 func toEndpoint(spec *securityv1alpha1.ToSpec) *securityv1alpha1.EndpointSpec {
@@ -230,6 +243,7 @@ func (r *HostFirewallRuleReconciler) resolveEndpoint(
 	interval time.Duration,
 	families []securityv1alpha1.IPFamily,
 	maxAddresses int,
+	now time.Time,
 ) (addrs []string, degraded bool, message string, requeue time.Duration) {
 	if spec == nil {
 		return []string{""}, false, "", interval
@@ -242,7 +256,7 @@ func (r *HostFirewallRuleReconciler) resolveEndpoint(
 		if ambiguous {
 			return nil, true, fmt.Sprintf("Knock path %q is used by multiple HostFirewallRules", spec.Dynamic.Path), 0
 		}
-		address, message, requeue, ok := dynamicAddress(cr, time.Now())
+		address, message, requeue, ok := dynamicAddress(cr, now)
 		if !ok {
 			return nil, false, message, 0
 		}

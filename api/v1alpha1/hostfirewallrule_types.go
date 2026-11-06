@@ -98,7 +98,9 @@ type DynamicEndpointSpec struct {
 	TTL *metav1.Duration `json:"ttl,omitempty"`
 
 	// tokenSecretRef requires a bearer token. The Secret must be in the
-	// operator namespace. When omitted, the path alone authorizes the knock.
+	// operator namespace and carry the label
+	// security.baprx.github.io/knock-token=true. When omitted, the path alone
+	// authorizes the knock.
 	// +optional
 	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
 }

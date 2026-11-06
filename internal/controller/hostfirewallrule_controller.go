@@ -172,6 +172,9 @@ func (r *HostFirewallRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.GenerationChangedPredicate{},
 			dynamicGrantChanged(),
 		))).
+		Watches(&securityv1alpha1.HostFirewallRule{},
+			handler.EnqueueRequestsFromMapFunc(r.mapDynamicPathToRules),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToRules), builder.WithPredicates(nodeLabelsChanged())).
 		Named("hostfirewallrule").
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
