@@ -207,6 +207,11 @@ chart-check: helm-sync ## Lint and render the Helm chart.
 		--set knock.enabled=true --set knock.service.enabled=true --set knock.service.type=NodePort \
 		--set knock.httpRoute.enabled=true --set 'knock.httpRoute.parentRefs[0].name=gateway' > /dev/null
 	"$(HELM)" template "$(HELM_RELEASE)" "$(HELM_CHART)" --namespace "$(HELM_NAMESPACE)" \
+		--set knock.enabled=true --set knock.service.enabled=true \
+		--set knock.httpRoute.enabled=true --set knock.listenerSet.enabled=true \
+		--set 'knock.listenerSet.parentRef.name=gateway' \
+		--set 'knock.listenerSet.listeners[0].name=knock-https' > /dev/null
+	"$(HELM)" template "$(HELM_RELEASE)" "$(HELM_CHART)" --namespace "$(HELM_NAMESPACE)" \
 		--set 'extraObjects[0].apiVersion=v1' --set 'extraObjects[0].kind=ConfigMap' \
 		--set 'extraObjects[0].metadata.name=extra' > /dev/null
 

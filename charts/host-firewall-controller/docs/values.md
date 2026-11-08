@@ -2,7 +2,7 @@
 
 Kubernetes operator that manages UFW rules on every node from HostFirewallRule custom resources, without ever touching unmanaged rules or the global UFW state.
 
-![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.0](https://img.shields.io/badge/AppVersion-0.4.0-informational?style=flat-square)
+![Version: 0.6.0](https://img.shields.io/badge/Version-0.6.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.5.0](https://img.shields.io/badge/AppVersion-0.5.0-informational?style=flat-square)
 
 ## Requirements
 
@@ -27,7 +27,7 @@ Kubernetes: `>=1.31.0-0`
 | image.repository | string | `"ghcr.io/baprx/host-firewall-controller"` | Container image repository. |
 | image.tag | string | `""` | Container image tag. Defaults to .Chart.AppVersion when empty. |
 | imagePullSecrets | list | `[]` | Secrets used to pull the image from a private registry. |
-| knock | object | `{"bindAddress":":8082","enabled":false,"httpRoute":{"annotations":{},"enabled":false,"hostnames":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}],"parentRefs":[]},"ingress":{"annotations":{},"className":"","enabled":false,"hosts":[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}],"tls":[]},"port":8082,"service":{"annotations":{},"enabled":false,"externalTrafficPolicy":"Local","type":"ClusterIP"},"trustedProxies":[]}` | HTTP endpoint that lets a rule update its dynamic endpoint from the caller's source IP. |
+| knock | object | `{"bindAddress":":8082","enabled":false,"httpRoute":{"annotations":{},"enabled":false,"hostnames":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}],"parentRefs":[]},"ingress":{"annotations":{},"className":"","enabled":false,"hosts":[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}],"tls":[]},"listenerSet":{"annotations":{},"enabled":false,"listeners":[],"parentRef":{}},"port":8082,"service":{"annotations":{},"enabled":false,"externalTrafficPolicy":"Local","type":"ClusterIP"},"trustedProxies":[]}` | HTTP endpoint that lets a rule update its dynamic endpoint from the caller's source IP. |
 | knock.bindAddress | string | `":8082"` | Address the knock server binds to. |
 | knock.enabled | bool | `false` | Expose the knock endpoint on every node. |
 | knock.httpRoute | object | `{"annotations":{},"enabled":false,"hostnames":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}],"parentRefs":[]}` | Gateway API HTTPRoute exposing the knock endpoint. Mutually exclusive with knock.ingress. |
@@ -35,13 +35,18 @@ Kubernetes: `>=1.31.0-0`
 | knock.httpRoute.enabled | bool | `false` | Create an HTTPRoute for the knock Service. |
 | knock.httpRoute.hostnames | list | `[]` | Hostnames the HTTPRoute matches. |
 | knock.httpRoute.matches | list | `[{"path":{"type":"PathPrefix","value":"/"}}]` | Matches for the HTTPRoute. The whole list forms one rule, so multiple entries are ANDed by the Gateway API. |
-| knock.httpRoute.parentRefs | list | `[]` | Gateway parent references. |
+| knock.httpRoute.parentRefs | list | `[]` | Gateway parent references. Defaults to the ListenerSet when knock.listenerSet.enabled is true and this list is empty. |
 | knock.ingress | object | `{"annotations":{},"className":"","enabled":false,"hosts":[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}],"tls":[]}` | Ingress exposing the knock endpoint. Mutually exclusive with knock.httpRoute. |
 | knock.ingress.annotations | object | `{}` | Annotations added to the Ingress. |
 | knock.ingress.className | string | `""` | Ingress class name. Defaults to the cluster default class when empty. |
 | knock.ingress.enabled | bool | `false` | Create an Ingress for the knock Service. |
 | knock.ingress.hosts | list | `[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and their paths. |
 | knock.ingress.tls | list | `[]` | TLS settings for the Ingress. |
+| knock.listenerSet | object | `{"annotations":{},"enabled":false,"listeners":[],"parentRef":{}}` | Gateway API ListenerSet that carries the knock listener. Enable it to attach the HTTPRoute to a listener instead of attaching it to the Gateway directly. |
+| knock.listenerSet.annotations | object | `{}` | Annotations added to the ListenerSet, for example cert-manager and external-dns annotations. |
+| knock.listenerSet.enabled | bool | `false` | Create a ListenerSet for the knock Service. |
+| knock.listenerSet.listeners | list | `[]` | Listeners of the ListenerSet, as Gateway API listener objects. When the HTTPRoute has no parentRefs, the chart attaches it to this ListenerSet. |
+| knock.listenerSet.parentRef | object | `{}` | Parent Gateway reference of the ListenerSet, for example {name: my-gateway, namespace: gateway-system}. The Gateway API defaults group and kind when they are empty. |
 | knock.port | int | `8082` | Host and container port for the knock endpoint. The chart does not add a ufw rule for this port; allow it in the host firewall when the firewall is default-deny. |
 | knock.service | object | `{"annotations":{},"enabled":false,"externalTrafficPolicy":"Local","type":"ClusterIP"}` | Service exposing the knock endpoint. |
 | knock.service.annotations | object | `{}` | Annotations added to the knock Service. |

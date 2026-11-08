@@ -146,7 +146,7 @@
               }
             },
             "parentRefs": {
-              "description": "Gateway parent references.",
+              "description": "Gateway parent references. Defaults to the ListenerSet when knock.listenerSet.enabled is true and this list is empty.",
               "type": "array",
               "items": {
                 "type": "object"
@@ -206,6 +206,36 @@
               "items": {
                 "type": "object"
               }
+            }
+          },
+          "additionalProperties": false
+        },
+        "listenerSet": {
+          "description": "Gateway API ListenerSet that carries the knock listener. Enable it to attach the HTTPRoute to a listener instead of attaching it to the Gateway directly.",
+          "type": "object",
+          "properties": {
+            "annotations": {
+              "description": "Annotations added to the ListenerSet, for example cert-manager and external-dns annotations.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "enabled": {
+              "description": "Create a ListenerSet for the knock Service.",
+              "type": "boolean"
+            },
+            "listeners": {
+              "description": "Listeners of the ListenerSet, as Gateway API listener objects. When the HTTPRoute has no parentRefs, the chart attaches it to this ListenerSet.",
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "parentRef": {
+              "description": "Parent Gateway reference of the ListenerSet, for example {name: my-gateway, namespace: gateway-system}. The Gateway API defaults group and kind when they are empty.",
+              "type": "object",
+              "additionalProperties": true
             }
           },
           "additionalProperties": false

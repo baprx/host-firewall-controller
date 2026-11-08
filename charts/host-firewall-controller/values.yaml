@@ -219,6 +219,28 @@ knock:
     tls: []
 
   # @schema additionalProperties: false
+  # -- Gateway API ListenerSet that carries the knock listener. Enable it to
+  # attach the HTTPRoute to a listener instead of attaching it to the Gateway
+  # directly.
+  listenerSet:
+    # -- Create a ListenerSet for the knock Service.
+    enabled: false
+    # @schema additionalProperties: {type: string}
+    # -- Annotations added to the ListenerSet, for example cert-manager and
+    # external-dns annotations.
+    annotations: {}
+    # @schema additionalProperties: true
+    # -- Parent Gateway reference of the ListenerSet, for example
+    # {name: my-gateway, namespace: gateway-system}. The Gateway API defaults
+    # group and kind when they are empty.
+    parentRef: {}
+    # @schema item: object
+    # -- Listeners of the ListenerSet, as Gateway API listener objects. When
+    # the HTTPRoute has no parentRefs, the chart attaches it to this
+    # ListenerSet.
+    listeners: []
+
+  # @schema additionalProperties: false
   # -- Gateway API HTTPRoute exposing the knock endpoint. Mutually exclusive
   # with knock.ingress.
   httpRoute:
@@ -228,7 +250,8 @@ knock:
     # -- Annotations added to the HTTPRoute.
     annotations: {}
     # @schema item: object
-    # -- Gateway parent references.
+    # -- Gateway parent references. Defaults to the ListenerSet when
+    # knock.listenerSet.enabled is true and this list is empty.
     parentRefs: []
     # @schema item: string
     # -- Hostnames the HTTPRoute matches.

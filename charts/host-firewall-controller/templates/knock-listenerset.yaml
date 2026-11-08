@@ -1,0 +1,27 @@
+{{- if and .Values.knock.enabled .Values.knock.listenerSet.enabled }}
+{{- if not .Values.knock.service.enabled }}
+{{- fail "knock.listenerSet.enabled requires knock.service.enabled" }}
+{{- end }}
+{{- if not .Values.knock.listenerSet.parentRef.name }}
+{{- fail "knock.listenerSet.enabled requires knock.listenerSet.parentRef.name" }}
+{{- end }}
+{{- if not .Values.knock.listenerSet.listeners }}
+{{- fail "knock.listenerSet.enabled requires at least one knock.listenerSet.listeners entry" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+  name: {{ include "hfc.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hfc.labels" . | nindent 4 }}
+  {{- with .Values.knock.listenerSet.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRef:
+    {{- toYaml .Values.knock.listenerSet.parentRef | nindent 4 }}
+  listeners:
+    {{- toYaml .Values.knock.listenerSet.listeners | nindent 4 }}
+{{- end }}

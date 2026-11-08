@@ -2,8 +2,12 @@
 {{- if not .Values.knock.service.enabled }}
 {{- fail "knock.httpRoute.enabled requires knock.service.enabled" }}
 {{- end }}
-{{- if not .Values.knock.httpRoute.parentRefs }}
-{{- fail "knock.httpRoute.enabled requires at least one knock.httpRoute.parentRefs entry" }}
+{{- $parentRefs := .Values.knock.httpRoute.parentRefs }}
+{{- if and (not $parentRefs) .Values.knock.listenerSet.enabled }}
+{{- $parentRefs = list (dict "group" "gateway.networking.k8s.io" "kind" "ListenerSet" "name" (include "hfc.fullname" .)) }}
+{{- end }}
+{{- if not $parentRefs }}
+{{- fail "knock.httpRoute.enabled requires at least one knock.httpRoute.parentRefs entry, or knock.listenerSet.enabled" }}
 {{- end }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -18,7 +22,7 @@ metadata:
   {{- end }}
 spec:
   parentRefs:
-    {{- toYaml .Values.knock.httpRoute.parentRefs | nindent 4 }}
+    {{- toYaml $parentRefs | nindent 4 }}
   {{- with .Values.knock.httpRoute.hostnames }}
   hostnames:
     {{- toYaml . | nindent 4 }}

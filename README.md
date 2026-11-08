@@ -389,7 +389,48 @@ knock:
           value: /
 ```
 
-The chart does not install Gateway API CRDs or a Gateway controller.
+To put the listener on a `ListenerSet` instead of on the Gateway itself, enable
+`knock.listenerSet`. The chart renders the `ListenerSet`, and when the
+HTTPRoute has no `parentRefs` it attaches the route to that `ListenerSet`:
+
+```yaml
+knock:
+  enabled: true
+  service:
+    enabled: true
+  httpRoute:
+    enabled: true
+    hostnames:
+      - knock.example.com
+    matches:
+      - path:
+          type: PathPrefix
+          value: /
+  listenerSet:
+    enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    parentRef:
+      name: my-gateway
+      namespace: gateway-system
+    listeners:
+      - name: knock-https
+        hostname: knock.example.com
+        port: 443
+        protocol: HTTPS
+        tls:
+          mode: Terminate
+          certificateRefs:
+            - name: knock-tls
+```
+
+`knock.listenerSet.listeners` takes Gateway API listener objects as-is, so any
+listener field the implementation supports can be set. Explicit
+`knock.httpRoute.parentRefs` entries take precedence over the automatic
+`ListenerSet` parent.
+
+The chart does not install Gateway API CRDs or a Gateway controller. The
+`ListenerSet` resource also has to be installed by the cluster.
 
 For `NodePort` and `LoadBalancer` Services the chart sets
 `externalTrafficPolicy` (default `Local`), which preserves the caller's source
