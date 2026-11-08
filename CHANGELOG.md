@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/baprx/host-firewall-controller/compare/v0.4.0...v0.4.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **controller:** tolerate shared rules and mid-reconcile deletion ([d86b585](https://github.com/baprx/host-firewall-controller/commit/d86b58539a629c42f7089eb441069aa7bbdbee8c))
+
 ## [0.4.0](https://github.com/baprx/host-firewall-controller/compare/v0.3.0...v0.4.0) (2026-11-06)
 
 
