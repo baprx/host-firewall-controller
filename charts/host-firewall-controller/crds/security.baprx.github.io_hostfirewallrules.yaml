@@ -23,9 +23,35 @@ spec:
     - jsonPath: .spec.direction
       name: Direction
       type: string
+    - jsonPath: .status.summary
+      name: Applied
+      type: string
+    - jsonPath: .status.dynamic.address
+      name: Granted
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
+    - jsonPath: .spec.from.cidr
+      name: From
+      priority: 1
+      type: string
+    - jsonPath: .spec.from.host
+      name: Host
+      priority: 1
+      type: string
+    - jsonPath: .spec.to.ports
+      name: Ports
+      priority: 1
+      type: string
+    - jsonPath: .spec.from.dynamic.path
+      name: Knock path
+      priority: 1
+      type: string
+    - jsonPath: .status.dynamic.expiresAt
+      name: Grant expires
+      priority: 1
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -470,6 +496,12 @@ spec:
                   type: object
                 description: nodes maps a node name to that node's view of the rule.
                 type: object
+              summary:
+                description: |-
+                  summary aggregates nodes into one line for kubectl printer columns, for
+                  example "3/3 applied" or "2/3 applied, 1 degraded". It is display-only:
+                  each pod recomputes it from its own cached view and the last write wins.
+                type: string
             type: object
         required:
         - spec

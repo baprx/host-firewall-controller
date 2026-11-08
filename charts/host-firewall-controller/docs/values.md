@@ -2,7 +2,7 @@
 
 Kubernetes operator that manages UFW rules on every node from HostFirewallRule custom resources, without ever touching unmanaged rules or the global UFW state.
 
-![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
+![Version: 0.5.0](https://img.shields.io/badge/Version-0.5.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.0](https://img.shields.io/badge/AppVersion-0.4.0-informational?style=flat-square)
 
 ## Requirements
 
@@ -16,6 +16,7 @@ Kubernetes: `>=1.31.0-0`
 | defaultRefreshInterval | string | `"5m"` | Hostname refresh interval for rules that do not set spec.resolve.refreshInterval. |
 | dryRun | bool | `false` | Log the ufw commands instead of running them. Nothing is written to a host while this is true. |
 | extraArgs | list | `[]` | Extra raw flags appended to the manager. |
+| extraObjects | list | `[]` | Arbitrary Kubernetes manifests appended to the release. Each item is a manifest map rendered with tpl, so it can reference release values and chart helpers with {{ ... }}. |
 | fullnameOverride | string | `""` | Override the full release name used in resource names. |
 | healthProbe | object | `{"bindAddress":":8081","port":8081}` | Health probe server settings. |
 | healthProbe.bindAddress | string | `":8081"` | Address the health probe server binds to. |
@@ -26,10 +27,27 @@ Kubernetes: `>=1.31.0-0`
 | image.repository | string | `"ghcr.io/baprx/host-firewall-controller"` | Container image repository. |
 | image.tag | string | `""` | Container image tag. Defaults to .Chart.AppVersion when empty. |
 | imagePullSecrets | list | `[]` | Secrets used to pull the image from a private registry. |
-| knock | object | `{"bindAddress":":8082","enabled":false,"port":8082,"trustedProxies":[]}` | HTTP endpoint that lets a rule update its dynamic endpoint from the caller's source IP. |
+| knock | object | `{"bindAddress":":8082","enabled":false,"httpRoute":{"annotations":{},"enabled":false,"hostnames":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}],"parentRefs":[]},"ingress":{"annotations":{},"className":"","enabled":false,"hosts":[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}],"tls":[]},"port":8082,"service":{"annotations":{},"enabled":false,"externalTrafficPolicy":"Local","type":"ClusterIP"},"trustedProxies":[]}` | HTTP endpoint that lets a rule update its dynamic endpoint from the caller's source IP. |
 | knock.bindAddress | string | `":8082"` | Address the knock server binds to. |
 | knock.enabled | bool | `false` | Expose the knock endpoint on every node. |
+| knock.httpRoute | object | `{"annotations":{},"enabled":false,"hostnames":[],"matches":[{"path":{"type":"PathPrefix","value":"/"}}],"parentRefs":[]}` | Gateway API HTTPRoute exposing the knock endpoint. Mutually exclusive with knock.ingress. |
+| knock.httpRoute.annotations | object | `{}` | Annotations added to the HTTPRoute. |
+| knock.httpRoute.enabled | bool | `false` | Create an HTTPRoute for the knock Service. |
+| knock.httpRoute.hostnames | list | `[]` | Hostnames the HTTPRoute matches. |
+| knock.httpRoute.matches | list | `[{"path":{"type":"PathPrefix","value":"/"}}]` | Matches for the HTTPRoute. The whole list forms one rule, so multiple entries are ANDed by the Gateway API. |
+| knock.httpRoute.parentRefs | list | `[]` | Gateway parent references. |
+| knock.ingress | object | `{"annotations":{},"className":"","enabled":false,"hosts":[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}],"tls":[]}` | Ingress exposing the knock endpoint. Mutually exclusive with knock.httpRoute. |
+| knock.ingress.annotations | object | `{}` | Annotations added to the Ingress. |
+| knock.ingress.className | string | `""` | Ingress class name. Defaults to the cluster default class when empty. |
+| knock.ingress.enabled | bool | `false` | Create an Ingress for the knock Service. |
+| knock.ingress.hosts | list | `[{"host":"knock.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and their paths. |
+| knock.ingress.tls | list | `[]` | TLS settings for the Ingress. |
 | knock.port | int | `8082` | Host and container port for the knock endpoint. The chart does not add a ufw rule for this port; allow it in the host firewall when the firewall is default-deny. |
+| knock.service | object | `{"annotations":{},"enabled":false,"externalTrafficPolicy":"Local","type":"ClusterIP"}` | Service exposing the knock endpoint. |
+| knock.service.annotations | object | `{}` | Annotations added to the knock Service. |
+| knock.service.enabled | bool | `false` | Create a Service for the knock endpoint. |
+| knock.service.externalTrafficPolicy | string | `"Local"` | Route traffic to node-local pods only. Local preserves the client source IP, which is the address a knock allows. Only rendered for NodePort and LoadBalancer Services. |
+| knock.service.type | string | `"ClusterIP"` | Service type. |
 | knock.trustedProxies | list | `[]` | CIDRs allowed to set X-Forwarded-For. |
 | lockPath | string | `""` | Host-wide ufw lock file. Defaults to <hostRoot>/run/host-firewall-controller.lock. |
 | maxAddresses | int | `16` | Maximum number of addresses used per hostname by default. |

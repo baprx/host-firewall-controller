@@ -46,7 +46,8 @@ helm upgrade --install host-firewall-controller \
 
 The chart installs a privileged DaemonSet with `hostNetwork: true`, the host root
 mounted at `/host`, a ClusterRole that can read rules and nodes and write rule
-status, and a metrics Service.
+status, and a metrics Service. When the knock endpoint is enabled, the chart can
+also expose it through a Service with an Ingress or an HTTPRoute.
 
 The CRD lives in the chart's `crds/` directory. Helm installs it but does not
 upgrade it on `helm upgrade`, so apply it explicitly when it changes:
@@ -77,6 +78,9 @@ spec:
 ```bash
 kubectl apply -f config/samples/security_v1alpha1_hostfirewallrule.yaml
 kubectl get hfr
+# NAME               ACTION   DIRECTION   APPLIED        GRANTED   AGE
+# allow-ssh-office   allow    in          3/3 applied              4d2h
+kubectl get hfr -o wide
 kubectl get hfr allow-ssh-office -o jsonpath='{.status.nodes}' | jq
 ```
 
@@ -117,6 +121,7 @@ name `hfr`.
 
 ```yaml
 status:
+  summary: 3/3 applied
   nodes:
     node-a:
       generation: 3
@@ -134,6 +139,16 @@ status:
 
 Each pod writes only its own node entry with server-side apply and a per-node
 field manager, so pods never overwrite each other.
+
+`status.summary` backs the `Applied` column of `kubectl get hfr`: the API
+server's table convertor cannot render a map, so the operator publishes one
+aggregate line, `<applied>/<reported> applied`, with `, <n> degraded` appended
+when some node reports a degraded state. The denominator counts the nodes that
+have reported for that rule. The field is display-only and recomputed by every
+pod, so it is last-writer-wins and can lag one reconcile during a transition.
+`-o wide` adds `From`, `Host`, `Ports`, `Knock path` and `Grant expires`; the
+`Granted` column shows the address of the last accepted knock, and `Grant
+expires` its RFC3339 expiry.
 
 ## FQDN endpoints
 
@@ -316,6 +331,89 @@ knock:
   only when every dynamic rule is path-only. A non-chart install that uses
   `tokenSecretRef` also needs a namespaced `get` Role and RoleBinding on
   `secrets` in that namespace, equivalent to the chart's.
+
+### Exposing the knock endpoint
+
+The chart can create a Service for the knock port and expose it through either a
+classic Ingress or a Gateway API HTTPRoute. The Service is required by both, and
+the two routing options are mutually exclusive.
+
+A Service without routing exposes the port inside the cluster:
+
+```yaml
+knock:
+  enabled: true
+  service:
+    enabled: true
+    type: ClusterIP
+```
+
+An Ingress exposes it through an Ingress controller:
+
+```yaml
+knock:
+  enabled: true
+  service:
+    enabled: true
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: knock.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: knock-tls
+        hosts:
+          - knock.example.com
+```
+
+Or an HTTPRoute through a Gateway API implementation:
+
+```yaml
+knock:
+  enabled: true
+  service:
+    enabled: true
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: my-gateway
+        namespace: gateway-system
+    hostnames:
+      - knock.example.com
+    matches:
+      - path:
+          type: PathPrefix
+          value: /
+```
+
+The chart does not install Gateway API CRDs or a Gateway controller.
+
+For `NodePort` and `LoadBalancer` Services the chart sets
+`externalTrafficPolicy` (default `Local`), which preserves the caller's source
+IP so the knock allows the right address. Through an Ingress or HTTPRoute the
+immediate peer is the proxy instead: add the proxy's CIDR to
+`knock.trustedProxies` and make sure the proxy forwards `X-Forwarded-For`.
+
+The chart also appends arbitrary manifests from `extraObjects` to the release.
+Each entry is a manifest map rendered with Helm's `tpl`, so it can use release
+values and chart helpers:
+
+```yaml
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: '{{ include "hfc.fullname" . }}-extra'
+      namespace: '{{ .Release.Namespace }}'
+    data:
+      endpoint: 'http://{{ include "hfc.fullname" . }}-knock:{{ .Values.knock.port }}'
+```
+
+Literal `{{` in a manifest must be escaped for Helm, for example
+`{{ "{{" }}`.
 
 > **Warning:** the endpoint speaks plain HTTP. The path and the bearer token
 > are visible to anyone on the network path. Put a TLS reverse proxy or VPN in

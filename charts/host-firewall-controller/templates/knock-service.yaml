@@ -1,0 +1,25 @@
+{{- if and .Values.knock.enabled .Values.knock.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hfc.fullname" . }}-knock
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hfc.labels" . | nindent 4 }}
+  {{- with .Values.knock.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.knock.service.type }}
+  {{- if has .Values.knock.service.type (list "NodePort" "LoadBalancer") }}
+  externalTrafficPolicy: {{ .Values.knock.service.externalTrafficPolicy }}
+  {{- end }}
+  ports:
+    - name: knock
+      port: {{ .Values.knock.port }}
+      targetPort: knock
+      protocol: TCP
+  selector:
+    {{- include "hfc.selectorLabels" . | nindent 4 }}
+{{- end }}

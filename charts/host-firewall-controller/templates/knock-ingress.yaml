@@ -1,0 +1,52 @@
+{{- if and .Values.knock.ingress.enabled .Values.knock.httpRoute.enabled }}
+{{- fail "knock.ingress.enabled and knock.httpRoute.enabled are mutually exclusive; enable only one" }}
+{{- end }}
+{{- if and .Values.knock.enabled .Values.knock.ingress.enabled }}
+{{- if not .Values.knock.service.enabled }}
+{{- fail "knock.ingress.enabled requires knock.service.enabled" }}
+{{- end }}
+{{- if not .Values.knock.ingress.hosts }}
+{{- fail "knock.ingress.enabled requires at least one knock.ingress.hosts entry" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hfc.fullname" . }}-knock
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hfc.labels" . | nindent 4 }}
+  {{- with .Values.knock.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.knock.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.knock.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.knock.ingress.hosts }}
+    {{- if not .paths }}
+    {{- fail (printf "knock.ingress.hosts entry %q requires at least one path" .host) }}
+    {{- end }}
+    {{- if .host }}
+    - host: {{ .host | quote }}
+      http:
+    {{- else }}
+    - http:
+    {{- end }}
+        paths:
+          {{- range .paths }}
+          - path: {{ default "/" .path }}
+            pathType: {{ default "Prefix" .pathType }}
+            backend:
+              service:
+                name: {{ include "hfc.fullname" $ }}-knock
+                port:
+                  name: knock
+          {{- end }}
+    {{- end }}
+{{- end }}

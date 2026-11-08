@@ -1,0 +1,10 @@
+{{- if not (kindIs "slice" .Values.extraObjects) }}
+{{- fail "extraObjects must be a list of Kubernetes manifests" }}
+{{- end }}
+{{- range $index, $object := .Values.extraObjects }}
+{{- if not (kindIs "map" $object) }}
+{{- fail (printf "extraObjects[%d] must be a Kubernetes manifest map" $index) }}
+{{- end }}
+---
+{{ tpl (toYaml $object) $ }}
+{{- end }}

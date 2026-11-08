@@ -179,6 +179,68 @@ knock:
   # -- CIDRs allowed to set X-Forwarded-For.
   trustedProxies: []
 
+  # @schema additionalProperties: false
+  # -- Service exposing the knock endpoint.
+  service:
+    # -- Create a Service for the knock endpoint.
+    enabled: false
+    # @schema enum: [ClusterIP, NodePort, LoadBalancer]
+    # -- Service type.
+    type: ClusterIP
+    # @schema enum: [Cluster, Local]
+    # -- Route traffic to node-local pods only. Local preserves the client
+    # source IP, which is the address a knock allows. Only rendered for
+    # NodePort and LoadBalancer Services.
+    externalTrafficPolicy: Local
+    # @schema additionalProperties: {type: string}
+    # -- Annotations added to the knock Service.
+    annotations: {}
+
+  # @schema additionalProperties: false
+  # -- Ingress exposing the knock endpoint. Mutually exclusive with
+  # knock.httpRoute.
+  ingress:
+    # -- Create an Ingress for the knock Service.
+    enabled: false
+    # -- Ingress class name. Defaults to the cluster default class when empty.
+    className: ""
+    # @schema additionalProperties: {type: string}
+    # -- Annotations added to the Ingress.
+    annotations: {}
+    # @schema item: object
+    # -- Ingress hosts and their paths.
+    hosts:
+      - host: knock.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    # @schema item: object
+    # -- TLS settings for the Ingress.
+    tls: []
+
+  # @schema additionalProperties: false
+  # -- Gateway API HTTPRoute exposing the knock endpoint. Mutually exclusive
+  # with knock.ingress.
+  httpRoute:
+    # -- Create an HTTPRoute for the knock Service.
+    enabled: false
+    # @schema additionalProperties: {type: string}
+    # -- Annotations added to the HTTPRoute.
+    annotations: {}
+    # @schema item: object
+    # -- Gateway parent references.
+    parentRefs: []
+    # @schema item: string
+    # -- Hostnames the HTTPRoute matches.
+    hostnames: []
+    # @schema item: object
+    # -- Matches for the HTTPRoute. The whole list forms one rule, so multiple
+    # entries are ANDed by the Gateway API.
+    matches:
+      - path:
+          type: PathPrefix
+          value: /
+
 # @schema additionalProperties: false
 # -- ServiceAccount settings.
 serviceAccount:
@@ -199,6 +261,12 @@ rbac:
 # @schema additionalProperties: {type: string}
 # -- Labels added to every resource.
 commonLabels: {}
+
+# @schema item: object
+# -- Arbitrary Kubernetes manifests appended to the release. Each item is a
+# manifest map rendered with tpl, so it can reference release values and chart
+# helpers with {{ ... }}.
+extraObjects: []
 
 # -- HostFirewallRule resources keyed by their name. Each value is the rule
 # spec, passed through to the CRD verbatim, so any field the operator supports
