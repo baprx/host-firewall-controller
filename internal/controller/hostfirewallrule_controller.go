@@ -105,8 +105,10 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		status.Degraded = true
 		status.Message = fmt.Sprintf("Invalid nodeSelector: %v", selectorErr)
 		status.LastAppliedTime = &metav1.Time{Time: time.Now()}
-		if err := r.patchStatus(ctx, &cr, status); err != nil {
+		if gone, err := r.updateStatus(ctx, &cr, status); err != nil {
 			return ctrl.Result{}, err
+		} else if gone {
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, selectorErr
 	}
@@ -139,8 +141,10 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			status.LastAppliedTime = &metav1.Time{Time: time.Now()}
 			status.Message = fmt.Sprintf("Rules matching this node would need %d rules, above the node maximum of %d",
 				total, r.MaxRulesPerNode)
-			if err := r.patchStatus(ctx, &cr, status); err != nil {
+			if gone, err := r.updateStatus(ctx, &cr, status); err != nil {
 				return ctrl.Result{}, err
+			} else if gone {
+				return ctrl.Result{}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("%s", status.Message)
 		}
@@ -149,8 +153,10 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	result := r.converge(ctx, token, exp.Rules, prev.CommentsUnsupported)
 
 	status := r.statusFor(&cr, exp, result, prev, matches)
-	if err := r.patchStatus(ctx, &cr, status); err != nil {
+	if gone, err := r.updateStatus(ctx, &cr, status); err != nil {
 		return ctrl.Result{}, err
+	} else if gone {
+		return ctrl.Result{}, nil
 	}
 
 	r.emitEvents(&cr, status, prev, result.Err)
@@ -163,6 +169,27 @@ func (r *HostFirewallRuleReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: exp.RequeueAfter}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// updateStatus writes this node's status entry. A NotFound means the rule was
+// deleted between the initial Get and this write. The rule's delete event runs
+// a sweep that prunes its ufw rules, so this reconcile must neither fail nor
+// requeue over it. It reports whether the rule is gone.
+func (r *HostFirewallRuleReconciler) updateStatus(
+	ctx context.Context,
+	cr *securityv1alpha1.HostFirewallRule,
+	status securityv1alpha1.NodeStatus,
+) (bool, error) {
+	if err := r.patchStatus(ctx, cr, status); err != nil {
+		if apierrors.IsNotFound(err) {
+			logf.FromContext(ctx).V(1).Info(
+				"Rule was deleted during reconcile, skipping status update",
+				"rule", cr.Name, "node", r.NodeName)
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

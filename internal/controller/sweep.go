@@ -34,6 +34,17 @@ import (
 // removes every rule owned by the operator that is no longer desired by a live,
 // matching CR. It is the periodic drift-repair path: non-hostname rules do not
 // requeue, and informer resyncs are filtered out by the generation predicate.
+// sweepTarget is one live, matching HostFirewallRule with everything the sweep
+// needs to converge it without refetching.
+type sweepTarget struct {
+	cr       securityv1alpha1.HostFirewallRule
+	token    string
+	rules    []ufw.Rule
+	exp      expansion
+	prev     securityv1alpha1.NodeStatus
+	comments bool
+}
+
 func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 	log := logf.FromContext(ctx).WithValues("node", r.NodeName)
 
@@ -51,14 +62,6 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 	// fetched again so a rule deleted between List and now cannot be
 	// resurrected from the snapshot, and the whole node is checked against the
 	// cap before any rule is added.
-	type sweepTarget struct {
-		cr       securityv1alpha1.HostFirewallRule
-		token    string
-		rules    []ufw.Rule
-		exp      expansion
-		prev     securityv1alpha1.NodeStatus
-		comments bool
-	}
 	var targets []sweepTarget
 	var errs []error
 	ruleCount := 0
@@ -106,25 +109,16 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 
 	// Reconcile each CR through the normal convergence path. This repairs
 	// drift (not only stale rules) and reuses the collision and add-failure
-	// safeguards.
+	// safeguards. Rules satisfied by another HostFirewallRule are collected so
+	// they can be re-converged after the prune phase.
+	var shared []sweepTarget
 	for _, target := range targets {
-		result := r.converge(ctx, target.token, target.rules, target.comments)
-		if result.Err != nil {
-			errs = append(errs, result.Err)
+		satisfiedByOther, err := r.convergeSweepTarget(ctx, target)
+		if err != nil {
+			errs = append(errs, err)
 		}
-
-		// The sweep repairs drift that no reconcile will report, so it must
-		// publish the resulting status itself. A CR deleted while the sweep
-		// runs has no status to update.
-		status := r.statusFor(&target.cr, target.exp, result, target.prev, true)
-		// lastAppliedTime also gates the hostname resolution cache, so a sweep
-		// that changed nothing must leave it alone.
-		if result.Added == 0 && result.Deleted == 0 {
-			status.LastAppliedTime = target.prev.LastAppliedTime
-		}
-		if err := r.patchStatus(ctx, &target.cr, status); err != nil && !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("patch status for rule %s: %w",
-				target.cr.Name, err))
+		if satisfiedByOther {
+			shared = append(shared, target)
 		}
 	}
 
@@ -189,7 +183,44 @@ func (r *HostFirewallRuleReconciler) ReconcileSweep(ctx context.Context) error {
 		errs = append(errs, pruneErr)
 	}
 
+	// A rule shared with another CR loses its owner during this sweep when that
+	// CR was deleted or no longer wants the same match key: the prune above
+	// removed the owner's entry, so the survivor must add the rule under its
+	// own marker now. Without this second pass the survivor would be
+	// unprotected until the next sweep.
+	for _, target := range shared {
+		if _, err := r.convergeSweepTarget(ctx, target); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	return errors.Join(errs...)
+}
+
+// convergeSweepTarget reconciles one CR through the normal convergence path and
+// publishes its per-node status. It reports whether any of the CR's rules were
+// already provided by another HostFirewallRule.
+func (r *HostFirewallRuleReconciler) convergeSweepTarget(
+	ctx context.Context,
+	target sweepTarget,
+) (satisfiedByOther bool, err error) {
+	result := r.converge(ctx, target.token, target.rules, target.comments)
+	err = result.Err
+
+	// The sweep repairs drift that no reconcile will report, so it must publish
+	// the resulting status itself. A CR deleted while the sweep runs has no
+	// status to update.
+	status := r.statusFor(&target.cr, target.exp, result, target.prev, true)
+	// lastAppliedTime also gates the hostname resolution cache, so a sweep that
+	// changed nothing must leave it alone.
+	if result.Added == 0 && result.Deleted == 0 {
+		status.LastAppliedTime = target.prev.LastAppliedTime
+	}
+	if patchErr := r.patchStatus(ctx, &target.cr, status); patchErr != nil && !apierrors.IsNotFound(patchErr) {
+		err = errors.Join(err, fmt.Errorf("patch status for rule %s: %w",
+			target.cr.Name, patchErr))
+	}
+	return len(result.Shared) > 0, err
 }
 
 // appendClearGrantError records a failed stale-grant clear with the rule name.

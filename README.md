@@ -339,8 +339,15 @@ Reconciliation only adopts rules whose comment parses as one of its markers.
 Anything else, including a rule with identical ports but no comment, is left
 alone. ufw would silently update such a rule in place when given the same match
 key, so the operator checks all of `ufw show added` first and refuses the add
-with a degraded status instead. See [docs/safety.md](docs/safety.md) for the
-full list of invariants.
+with a degraded status instead.
+
+Two `HostFirewallRule` objects may legitimately expand to the same concrete
+rule, for example a static allow and a dynamic knock grant that resolved to the
+same address. ufw can hold only one of them, and the comment (not the match key)
+carries ownership. The second CR therefore reports the rule as *shared* and
+leaves the existing marker alone; if the owning CR is later deleted or stops
+wanting that rule, the survivor takes it over under its own marker. See
+[docs/safety.md](docs/safety.md) for the full list of invariants.
 
 ## Operations
 

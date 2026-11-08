@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,6 +66,12 @@ func (r *HostFirewallRuleReconciler) statusFor(
 			present++
 			continue
 		}
+		// Another HostFirewallRule already provides this exact ufw rule, so
+		// the node matches this CR's intent even though its marker is absent.
+		if _, shared := result.Shared[marker]; shared {
+			present++
+			continue
+		}
 		// On ufw versions that do not report comments, the operator's own rule
 		// is indistinguishable from an unmanaged one except by its match key.
 		if prev.CommentsUnsupported && hasUnmarkedMatch(result.State, rule) {
@@ -73,6 +80,10 @@ func (r *HostFirewallRuleReconciler) statusFor(
 	}
 
 	status.Applied = result.Err == nil && present == len(exp.Rules)
+	shared := sharedRuleMessage(result.Shared)
+	if shared != "" {
+		status.Message = joinMessages(status.Message, shared)
+	}
 
 	// If ufw accepted rules but does not report our comments, keep the flag so
 	// subsequent reconciles adopt the unmarked rules instead of duplicating
@@ -86,10 +97,36 @@ func (r *HostFirewallRuleReconciler) statusFor(
 
 	if result.Err != nil {
 		status.Applied = false
-		status.Message = joinMessages(exp.Message, result.Err.Error())
+		status.Message = joinMessages(status.Message, result.Err.Error())
 	}
 
 	return status
+}
+
+// sharedRuleMessage explains that some desired rules are already provided by
+// another HostFirewallRule. Owners are deduplicated and sorted so the status
+// does not churn between reconciles.
+func sharedRuleMessage(shared map[string]string) string {
+	if len(shared) == 0 {
+		return ""
+	}
+
+	owners := make([]string, 0, len(shared))
+	seen := map[string]struct{}{}
+	for _, owner := range shared {
+		if _, ok := seen[owner]; ok {
+			continue
+		}
+		seen[owner] = struct{}{}
+		owners = append(owners, owner)
+	}
+	slices.Sort(owners)
+
+	subject := "rule already provided by another HostFirewallRule"
+	if len(shared) > 1 {
+		subject = fmt.Sprintf("%d rules already provided by other HostFirewallRules", len(shared))
+	}
+	return fmt.Sprintf("%s (%s)", subject, strings.Join(owners, ", "))
 }
 
 func joinMessages(messages ...string) string {

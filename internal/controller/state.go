@@ -36,7 +36,12 @@ type convergeResult struct {
 	State   ufw.State
 	Added   int
 	Deleted int
-	Err     error
+	// Shared maps a desired marker to the marker of another HostFirewallRule
+	// that already provides a rule with the same ufw match key. ufw identifies
+	// rules without their comment, so the node already matches this CR's intent
+	// and the existing entry's marker must not be rewritten.
+	Shared map[string]string
+	Err    error
 }
 
 // converge makes the node's ufw match the desired rule set. Missing rules are
@@ -80,20 +85,34 @@ func (r *HostFirewallRuleReconciler) converge(
 
 			// Adding a rule whose match key already exists is not an append:
 			// ufw updates the existing rule in place (or silently skips a
-			// prepend). That would steal an unmanaged rule or one owned by
-			// another HostFirewallRule. Refuse instead. The exception is a rule
-			// the operator itself added on a ufw that does not report comments:
-			// it is necessarily unmarked, so adopt it rather than duplicating.
+			// prepend). That would steal an unmanaged rule or rewrite another
+			// HostFirewallRule's ownership marker.
 			conflict, conflictFound := conflictingEntry(state, rule)
 			if conflictFound && conflict.Marker.Token != token {
-				if commentsUnsupported && conflict.Marker.Token == "" {
+				switch {
+				case conflict.Marker.Token == "" && commentsUnsupported:
+					// The operator's own rule on a ufw that does not report
+					// comments: it is necessarily unmarked, so adopt it rather
+					// than duplicating.
+					continue
+				case conflict.Marker.Token == "":
+					// Never touch a rule the operator does not manage.
+					errs = append(errs, fmt.Errorf(
+						"rule %s would replace existing ufw rule %q; refusing to modify a rule this CR does not own",
+						marker, ufw.ArgsString(conflict.Args)))
+					canPrune = false
+					continue
+				default:
+					// Another HostFirewallRule already provides a rule with
+					// this exact match key. The node already matches this CR's
+					// intent, and adding ours would only rewrite that CR's
+					// marker. Report the rule as shared instead.
+					if result.Shared == nil {
+						result.Shared = map[string]string{}
+					}
+					result.Shared[marker] = conflict.Marker.Token
 					continue
 				}
-				errs = append(errs, fmt.Errorf(
-					"rule %s would replace existing ufw rule %q; refusing to modify a rule this CR does not own",
-					marker, ufw.ArgsString(conflict.Args)))
-				canPrune = false
-				continue
 			}
 
 			// A rule of this CR whose match key is unchanged but whose

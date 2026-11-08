@@ -14,8 +14,10 @@ deliberate and are enforced by code, not convention.
    comment are left alone, and rules belonging to another CR have a different
    token. ufw updates an existing rule in place when an add has the same match
    key, so before adding, the operator compares the desired rule with every
-   entry from `ufw show added`. A collision with an unmanaged or other-CR rule
-   is refused rather than applied.
+   entry from `ufw show added`. A collision with an unmanaged rule is refused
+   rather than applied. A collision with another CR's rule is not an error:
+   ufw already enforces the same match key, so the rule is reported as shared
+   and the existing marker is left untouched.
 3. **Adds happen before deletes.** A changed rule never leaves a coverage gap.
    If any add fails or is refused, the delete phase is skipped entirely.
 4. **Deletion targets a freshly read state.** Before each delete the operator

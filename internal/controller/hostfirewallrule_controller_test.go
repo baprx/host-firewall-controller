@@ -31,10 +31,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	securityv1alpha1 "github.com/baprx/host-firewall-controller/api/v1alpha1"
@@ -740,7 +744,7 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(host.count()).To(Equal(2))
 	})
 
-	It("refuses to steal a rule owned by another HostFirewallRule", func() {
+	It("treats a rule shared with another HostFirewallRule as satisfied", func() {
 		first := uniqueRuleName("first")
 		createRule(first, allowTCP("22"))
 		mustReconcile(reconciler, first)
@@ -749,17 +753,47 @@ var _ = Describe("HostFirewallRule controller", func() {
 		second := uniqueRuleName("second")
 		createRule(second, allowTCP("22"))
 
+		// ufw identifies a rule without its comment, so both CRs want the same
+		// concrete rule. The node already matches the second rule's intent, so
+		// the operator must report it as applied instead of replacing the
+		// first rule (which would rewrite its ownership marker).
 		_, err := reconcileOnce(reconciler, second)
-		Expect(err).To(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred())
 
 		rules := host.snapshot()
 		Expect(rules).To(HaveLen(1))
 		Expect(rules[0].rule.Comment).To(HavePrefix("HFC:" + first + ":"))
 
 		status := fetchRule(second).Status.Nodes[nodeName]
-		Expect(status.Applied).To(BeFalse())
-		Expect(status.Degraded).To(BeTrue())
-		Expect(status.Message).To(ContainSubstring("refusing to modify"))
+		Expect(status.Applied).To(BeTrue())
+		Expect(status.Degraded).To(BeFalse())
+		Expect(status.Message).To(ContainSubstring("already provided by another HostFirewallRule"))
+		Expect(status.Message).To(ContainSubstring(first))
+	})
+
+	It("re-adds a shared rule under its own marker when the owner is deleted", func() {
+		first := uniqueRuleName("first")
+		createRule(first, allowTCP("22"))
+		mustReconcile(reconciler, first)
+
+		second := uniqueRuleName("second")
+		createRule(second, allowTCP("22"))
+		mustReconcile(reconciler, second)
+		Expect(host.count()).To(Equal(1))
+		Expect(host.snapshot()[0].rule.Comment).To(HavePrefix("HFC:" + first + ":"))
+
+		// The owner is gone, so the sweep prunes its marker and the survivor
+		// must take the rule over under its own marker in the same sweep.
+		Expect(k8sClient.Delete(ctx, fetchRule(first))).To(Succeed())
+		Expect(reconciler.ReconcileSweep(ctx)).To(Succeed())
+
+		rules := host.snapshot()
+		Expect(rules).To(HaveLen(1))
+		Expect(rules[0].rule.Comment).To(HavePrefix("HFC:" + second + ":"))
+
+		status := fetchRule(second).Status.Nodes[nodeName]
+		Expect(status.Applied).To(BeTrue())
+		Expect(status.Degraded).To(BeFalse())
 	})
 
 	It("reduces duplicate operator rules to one", func() {
@@ -1076,6 +1110,43 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(reconciler.ReconcileSweep(ctx)).To(Succeed())
 
 		Expect(host.count()).To(Equal(0))
+	})
+
+	It("ignores a status write rejected because the rule was deleted mid-reconcile", func() {
+		name := uniqueRuleName("gone")
+		createRule(name, allowTCP("22"))
+
+		// A rule deleted between the initial Get and the status write makes
+		// that write fail with NotFound. The delete event runs its own sweep,
+		// so this reconcile must not report an error.
+		gone := apierrors.NewNotFound(
+			schema.GroupResource{Group: securityv1alpha1.GroupVersion.Group, Resource: "hostfirewallrules"},
+			name,
+		)
+
+		watched, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
+		Expect(err).NotTo(HaveOccurred())
+
+		stale := newReconciler(host, nodeName)
+		stale.Client = interceptor.NewClient(watched, interceptor.Funcs{
+			SubResourcePatch: func(
+				context.Context, client.Client, string, client.Object, client.Patch,
+				...client.SubResourcePatchOption,
+			) error {
+				return gone
+			},
+			SubResourceApply: func(
+				context.Context, client.Client, string, runtime.ApplyConfiguration,
+				...client.SubResourceApplyOption,
+			) error {
+				return gone
+			},
+		})
+
+		result, err := reconcileOnce(stale, name)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(Equal(reconcile.Result{}))
+		Expect(host.count()).To(Equal(1))
 	})
 
 	It("resolves a hostname and refreshes it", func() {

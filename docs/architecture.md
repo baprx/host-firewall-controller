@@ -73,8 +73,11 @@ is why the operator scales horizontally without coordination.
    - Read state.
    - Add every desired marker that is missing.
    - Before each add, refuse to proceed if the same ufw match key already
-     belongs to an unmanaged rule or to another CR: ufw would update that rule
-     in place instead of appending.
+     belongs to an unmanaged rule: ufw would update that rule in place instead
+     of appending. A collision with another CR's rule is not an error. ufw
+     identifies rules without their comment, so the node already enforces what
+     this CR wants; the rule is reported as shared and keeps its existing
+     marker.
    - Delete every marker owned by this CR that is not desired, plus duplicate
      copies beyond the expected number of IP families. A dual-stack rule
      normally has one IPv4 and one IPv6 twin with the same marker, so twins are
@@ -133,6 +136,10 @@ The per-node sweep is the garbage collector and the drift repair mechanism. It:
    its rules until the next interval.
 3. Deletes every operator marker that is not in the union, and reduces duplicate
    markers beyond the expected number of IP families. v4/v6 twins are kept.
+4. Re-converges the CRs whose rules were shared with another CR. If the owner
+   was deleted or no longer wants that match key, step 3 removed its marker and
+   the survivor must add the rule under its own marker now, rather than waiting
+   for the next sweep.
 
 It runs at startup, every `--sweep-interval` (default 5 minutes), and whenever a
 CR is deleted. This is why there are no finalizers: a CR, or an entire cluster,
@@ -154,10 +161,11 @@ field manager `hfc-<sha256(node)[:12]>`. The API server merges map keys per
 owner, so pods never fight over the status object. The CRD status subresource is
 the only thing the operator writes.
 
-`applied` means every desired rule was found after convergence, either by marker
-or, when `commentsUnsupported` is set, by matching an unmarked rule's ufw match
-key. `degraded` means a non-fatal problem (DNS failure with last-known-good
-rules, truncation, a refused add). `commentsUnsupported` is described in
+`applied` means every desired rule was found after convergence, either by marker,
+by being provided by another HostFirewallRule with the same match key, or, when
+`commentsUnsupported` is set, by matching an unmarked rule's ufw match key.
+`degraded` means a non-fatal problem (DNS failure with last-known-good rules,
+truncation, a refused add). `commentsUnsupported` is described in
 [safety.md](safety.md).
 
 ## Dynamic IP knocks
