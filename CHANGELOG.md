@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/baprx/host-firewall-controller/compare/v0.4.1...v0.5.0) (2026-11-08)
+
+
+### Features
+
+* **api:** show rule status in kubectl get output ([6528527](https://github.com/baprx/host-firewall-controller/commit/65285273743502427cfdeb66ec2ba4a0f4b8f642))
+* **chart:** expose the knock endpoint and add extra objects ([95b665d](https://github.com/baprx/host-firewall-controller/commit/95b665df31e4653dada75757547db3da1a37ff8c))
+
 ## [0.4.1](https://github.com/baprx/host-firewall-controller/compare/v0.4.0...v0.4.1) (2026-11-08)
 
 
