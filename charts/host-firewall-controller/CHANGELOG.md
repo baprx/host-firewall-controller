@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.6.0...host-firewall-controller-v0.7.0) (2026-11-08)
+
+
+### Features
+
+* **chart:** support Gateway API ListenerSet for the knock endpoint ([55f7c0a](https://github.com/baprx/host-firewall-controller/commit/55f7c0a5d4cbca7f987c5425286705f0320e7a4c))
+
 ## [0.6.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.5.0...host-firewall-controller-v0.6.0) (2026-11-08)
 
 
