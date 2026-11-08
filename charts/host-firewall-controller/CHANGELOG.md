@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.5.0...host-firewall-controller-v0.6.0) (2026-11-08)
+
+
+### Features
+
+* **chart:** expose the knock endpoint and add extra objects ([95b665d](https://github.com/baprx/host-firewall-controller/commit/95b665df31e4653dada75757547db3da1a37ff8c))
+
 ## [0.5.0](https://github.com/baprx/host-firewall-controller/compare/host-firewall-controller-v0.4.0...host-firewall-controller-v0.5.0) (2026-11-06)
 
 
