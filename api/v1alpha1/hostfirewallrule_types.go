@@ -327,6 +327,12 @@ type HostFirewallRuleStatus struct {
 	// dynamic is the cluster-wide grant shared by every node.
 	// +optional
 	Dynamic *DynamicGrant `json:"dynamic,omitempty"`
+
+	// summary aggregates nodes into one line for kubectl printer columns, for
+	// example "3/3 applied" or "2/3 applied, 1 degraded". It is display-only:
+	// each pod recomputes it from its own cached view and the last write wins.
+	// +optional
+	Summary string `json:"summary,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -334,7 +340,14 @@ type HostFirewallRuleStatus struct {
 // +kubebuilder:resource:shortName=hfr,scope=Cluster
 // +kubebuilder:printcolumn:name="Action",type=string,JSONPath=`.spec.action`
 // +kubebuilder:printcolumn:name="Direction",type=string,JSONPath=`.spec.direction`
+// +kubebuilder:printcolumn:name="Applied",type=string,JSONPath=`.status.summary`
+// +kubebuilder:printcolumn:name="Granted",type=string,JSONPath=`.status.dynamic.address`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:printcolumn:name="From",type=string,JSONPath=`.spec.from.cidr`,priority=1
+// +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.from.host`,priority=1
+// +kubebuilder:printcolumn:name="Ports",type=string,JSONPath=`.spec.to.ports`,priority=1
+// +kubebuilder:printcolumn:name="Knock path",type=string,JSONPath=`.spec.from.dynamic.path`,priority=1
+// +kubebuilder:printcolumn:name="Grant expires",type=string,JSONPath=`.status.dynamic.expiresAt`,priority=1
 
 // HostFirewallRule is the Schema for the hostfirewallrules API
 type HostFirewallRule struct {

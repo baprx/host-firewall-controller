@@ -597,6 +597,110 @@ var _ = Describe("HostFirewallRule controller", func() {
 		Expect(status.Markers).To(HaveLen(1))
 	})
 
+	It("publishes an aggregate status summary", func() {
+		name := uniqueRuleName("summary")
+		createRule(name, allowTCP("22"))
+
+		mustReconcile(reconciler, name)
+
+		// The nodes map cannot be rendered by a printer column (the API server
+		// shows one arbitrary node), so kubectl reads this scalar instead.
+		Expect(fetchRule(name).Status.Summary).To(Equal("1/1 applied"))
+	})
+
+	It("publishes the aggregate summary through the apply status path", func() {
+		name := uniqueRuleName("summary-apply")
+		spec := allowTCP("22")
+		spec.From = &securityv1alpha1.EndpointSpec{CIDR: new("203.0.113.0/24")}
+		createRule(name, spec)
+
+		mustReconcile(reconciler, name)
+
+		rule := fetchRule(name)
+		Expect(rule.Status.Nodes[nodeName].Resolved.From).To(Equal([]string{"203.0.113.0/24"}))
+		Expect(rule.Status.Summary).To(Equal("1/1 applied"))
+	})
+
+	It("counts every reported node in the aggregate summary", func() {
+		name := uniqueRuleName("summary-multi")
+		createRule(name, allowTCP("22"))
+		mustReconcile(reconciler, name)
+
+		otherNode := "node-" + rand.String(6)
+		newNode(otherNode, nil)
+		other := newReconciler(newFakeHost(true), otherNode)
+		mustReconcile(other, name)
+
+		rule := fetchRule(name)
+		Expect(rule.Status.Nodes).To(HaveLen(2))
+		Expect(rule.Status.Summary).To(Equal("2/2 applied"))
+	})
+
+	It("renders the rule and its status in the kubectl table", func() {
+		name := uniqueRuleName("table")
+		spec := allowTCP("22")
+		spec.From = &securityv1alpha1.EndpointSpec{CIDR: new("203.0.113.0/24")}
+		spec.To.Ports = []securityv1alpha1.Port{"22", "6443"}
+		createRule(name, spec)
+
+		mustReconcile(reconciler, name)
+
+		table := fetchTable(name)
+		headers := make([]string, 0, len(table.ColumnDefinitions))
+		for _, column := range table.ColumnDefinitions {
+			headers = append(headers, column.Name)
+		}
+		Expect(headers).To(Equal([]string{
+			"Name", "Action", "Direction", "Applied", "Granted", "Age",
+			"From", "Host", "Ports", "Knock path", "Grant expires",
+		}))
+		Expect(table.Rows).To(HaveLen(1))
+
+		cells := tableCells(fetchTable(name))
+		GinkgoWriter.Printf("printer cells: %#v\n", cells)
+
+		Expect(cells["Name"]).To(Equal(name))
+		Expect(cells["Action"]).To(Equal("allow"))
+		Expect(cells["Direction"]).To(Equal("in"))
+		Expect(cells["Applied"]).To(Equal("1/1 applied"))
+		Expect(cells["From"]).To(Equal("203.0.113.0/24"))
+		// A list-valued JSONPath renders as JSON, since the table convertor
+		// reads it as a single cell.
+		Expect(cells["Ports"]).To(Equal(`["22","6443"]`))
+		Expect(cells["Granted"]).To(BeNil())
+		Expect(cells["Knock path"]).To(BeNil())
+		Expect(cells["Grant expires"]).To(BeNil())
+	})
+
+	It("renders the knock grant in the kubectl table", func() {
+		name := uniqueRuleName("table-knock")
+		path := "/knock/" + name
+		spec := allowTCP("22")
+		spec.From = &securityv1alpha1.EndpointSpec{
+			Dynamic: &securityv1alpha1.DynamicEndpointSpec{Path: path},
+		}
+		createRule(name, spec)
+
+		expires := metav1.NewTime(time.Now().Add(30 * time.Hour))
+		seedDynamicGrant(name, &securityv1alpha1.DynamicGrant{
+			Path:       path,
+			Side:       "from",
+			Address:    "82.64.186.84",
+			ObservedAt: metav1.NewTime(time.Now()),
+			ExpiresAt:  &expires,
+		})
+		mustReconcile(reconciler, name)
+
+		cells := tableCells(fetchTable(name))
+		Expect(cells["Applied"]).To(Equal("1/1 applied"))
+		Expect(cells["Granted"]).To(Equal("82.64.186.84"))
+		Expect(cells["Knock path"]).To(Equal(path))
+		// The expiry is in the future, so a date column would render "<invalid>"
+		// (date columns format time.Since, which is negative here). The raw
+		// RFC3339 timestamp is the only value the table convertor can render.
+		Expect(cells["Grant expires"]).To(Equal(expires.UTC().Format(time.RFC3339)))
+	})
+
 	It("adds the replacement before deleting the old rule", func() {
 		name := uniqueRuleName("update")
 		createRule(name, allowTCP("80"))

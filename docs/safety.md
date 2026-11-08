@@ -193,4 +193,5 @@ ufw delete allow proto tcp to any port 22
    the operator never changes it.
 5. Unmanaged rules captured before installation are still present after applying
    and deleting a test `HostFirewallRule`.
-6. `kubectl get hfr -A` shows `applied: true` for every expected node.
+6. `kubectl get hfr` reports `N/N applied` for every expected node of every
+   rule, with no `degraded` suffix.

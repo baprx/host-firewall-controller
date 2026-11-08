@@ -161,6 +161,15 @@ field manager `hfc-<sha256(node)[:12]>`. The API server merges map keys per
 owner, so pods never fight over the status object. The CRD status subresource is
 the only thing the operator writes.
 
+`status.summary` is a display-only aggregate behind the `Applied` printer
+column, for example `3/3 applied` or `2/3 applied, 1 degraded`. A column cannot
+render the `nodes` map: the API server's table convertor resolves a wildcard
+JSONPath to one element, which would be an arbitrary node. Every pod therefore
+recomputes the summary from its cached `status.nodes` plus its own fresh entry
+and writes it under its node field manager, so the value is last-writer-wins and
+can lag one reconcile during a transition. It self-heals on the next reconcile
+or sweep.
+
 `applied` means every desired rule was found after convergence, either by marker,
 by being provided by another HostFirewallRule with the same match key, or, when
 `commentsUnsupported` is set, by matching an unmarked rule's ufw match key.

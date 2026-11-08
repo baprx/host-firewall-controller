@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -139,6 +140,48 @@ func joinMessages(messages ...string) string {
 	return strings.Join(nonEmpty, "; ")
 }
 
+// statusSummary aggregates the per-node status into the single line exposed by
+// the Applied printer column. The nodes map cannot be rendered by a column: the
+// API server's table convertor reads one element of a wildcard JSONPath, which
+// is an arbitrary node. The value is display-only and last-writer-wins between
+// pods, so it can lag one reconcile during a transition and self-heals on the
+// next one.
+func statusSummary(nodes map[string]securityv1alpha1.NodeStatus) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+
+	applied := 0
+	degraded := 0
+	for _, node := range nodes {
+		if node.Applied {
+			applied++
+		}
+		if node.Degraded {
+			degraded++
+		}
+	}
+
+	summary := fmt.Sprintf("%d/%d applied", applied, len(nodes))
+	if degraded > 0 {
+		summary += fmt.Sprintf(", %d degraded", degraded)
+	}
+	return summary
+}
+
+// summaryNodes returns the reported node statuses with this node's fresh entry
+// replacing its previous one.
+func summaryNodes(
+	reported map[string]securityv1alpha1.NodeStatus,
+	nodeName string,
+	status securityv1alpha1.NodeStatus,
+) map[string]securityv1alpha1.NodeStatus {
+	nodes := make(map[string]securityv1alpha1.NodeStatus, len(reported)+1)
+	maps.Copy(nodes, reported)
+	nodes[nodeName] = status
+	return nodes
+}
+
 // patchStatus writes only this node's status entry, using server-side apply so
 // pods never overwrite each other's node entries.
 func (r *HostFirewallRuleReconciler) patchStatus(
@@ -156,6 +199,9 @@ func (r *HostFirewallRuleReconciler) patchStatus(
 		},
 		Status: securityv1alpha1.HostFirewallRuleStatus{
 			Nodes: map[string]securityv1alpha1.NodeStatus{r.NodeName: status},
+			// The apply body only owns this node's key, but the summary must
+			// account for every node that has reported so far.
+			Summary: statusSummary(summaryNodes(cr.Status.Nodes, r.NodeName, status)),
 		},
 	}
 
