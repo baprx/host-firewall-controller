@@ -48,7 +48,7 @@ repos:
   # Requires the helm-values-schema-json plugin:
   #   helm plugin install --verify=false --version 2.6.0 https://github.com/losisin/helm-values-schema-json.git
   - repo: https://github.com/losisin/helm-values-schema-json
-    rev: v2.6.0
+    rev: v2.6.1
     hooks:
       - id: helm-schema
         args:
