@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/baprx/host-firewall-controller/compare/v0.6.0...v0.6.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** update module golang.org/x/sys to v0.50.0 ([#47](https://github.com/baprx/host-firewall-controller/issues/47)) ([7cdfe0d](https://github.com/baprx/host-firewall-controller/commit/7cdfe0dda400fe9c3c20bff28e779a8c916930e0))
+* **deps:** update module sigs.k8s.io/controller-runtime to v0.25.3 ([#56](https://github.com/baprx/host-firewall-controller/issues/56)) ([0d9a8eb](https://github.com/baprx/host-firewall-controller/commit/0d9a8ebb499e268355244c94c738b798c5c68dde))
+
 ## [0.6.0](https://github.com/baprx/host-firewall-controller/compare/v0.5.0...v0.6.0) (2026-11-08)
 
 
